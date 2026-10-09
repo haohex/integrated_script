@@ -43,4 +43,4 @@ flowchart TD
 
 ## 验证范围
 
-源码测试、真实界面交互与冻结包验证分别记录，不能用 CI 配置代替平台运行证据。Linux 包必须在 Ubuntu 22.04 基线内构建；较新主机生成的动态库可能提高 glibc 要求。Windows/macOS 原生外观、缩放、构建和签名仍须在对应系统验收。具体结果见 [验证报告](verification-report.md)，部署方式见 [离线部署说明](offline-deployment.md)。
+源码测试、真实界面交互与冻结包验证分别记录，不能用 CI 配置代替平台运行证据。Linux 包在 Ubuntu 22.04 基线构建，并在 22.04/24.04 实际运行；Windows 使用 Server 2022 原生云端 runner 验证构建、GUI/TUI 操作和应用缩放，不将其等同于物理 Win10/11 设备测试。本次发布不包含 macOS 包，也没有配置 Authenticode 签名。具体结果见 [验证报告](verification-report.md)，部署方式见 [离线部署说明](offline-deployment.md)。

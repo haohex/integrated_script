@@ -395,3 +395,95 @@ def test_log_viewer_dialog_screen_containment_and_margins(qapp):
     assert dlg.btn_copy.isVisible() and dlg.btn_copy.isEnabled()
     assert dlg.log_view.toPlainText() == sample_logs
     dlg.accept()
+
+
+def test_result_view_windows_long_path_viewport_containment_and_zero_hscroll(qapp):
+    """Verify ResultView with authentic Windows long paths (unbroken tokens + Chinese):
+    1. At standard result width 700 and small screen width 326 / height 120:
+       - scroll_area.horizontalScrollBar().maximum() == 0 (no horizontal scrolling).
+       - Banner and '查看日志' (btn_view_logs) remain fully inside the viewport width.
+       - Vertical scrolling is enabled (verticalScrollBar().maximum() > 0 on small heights).
+    2. All payload data remains accessible in structured tree and JSON views.
+    """
+    import json
+
+    from integrated_script.contracts.results import OperationResult
+
+    rv = ResultView()
+    win_img_dir = r"C:\Users\runneradmin\AppData\Local\Temp\integ_smoke_a1b2c3d4e5f6\测试图像目录_无空格长路径样本集"
+    win_lbl_dir = r"C:\Users\runneradmin\AppData\Local\Temp\integ_smoke_a1b2c3d4e5f6\输出标签目录_无空格长路径样本集"
+
+    long_payload = {
+        "images_dir": win_img_dir,
+        "labels_dir": win_lbl_dir,
+        "created_labels": [
+            {
+                "success": True,
+                "action": "created",
+                "image_file": win_img_dir + r"\样本图片_01_无空格长路径样本.jpg",
+                "label_file": win_lbl_dir + r"\样本标签_01_无空格长路径样本.txt",
+            },
+            {
+                "success": True,
+                "action": "created",
+                "image_file": win_img_dir + r"\样本图片_02_无空格长路径样本.jpg",
+                "label_file": win_lbl_dir + r"\样本标签_02_无空格长路径样本.txt",
+            },
+        ],
+        "statistics": {
+            "total_images": 2,
+            "created_count": 2,
+            "skipped_count": 0,
+            "failed_count": 0,
+        },
+    }
+
+    op_result = OperationResult(
+        success=True,
+        message="空白标签创建完成，无空格长路径已顺利处理。",
+        payload=long_payload,
+    )
+    rv.set_result(
+        op_result, logs="[INFO] 正在处理样本...\n[SUCCESS] 全部2个标签创建完成。"
+    )
+    rv.show()
+    qapp.processEvents()
+
+    test_geometries = [(700, 500), (326, 120)]
+    for target_w, target_h in test_geometries:
+        rv.resize(target_w, target_h)
+        qapp.processEvents()
+
+        vp_width = rv.scroll_area.viewport().width()
+        hbar = rv.scroll_area.horizontalScrollBar()
+        vbar = rv.scroll_area.verticalScrollBar()
+
+        # 1. No horizontal scrolling anywhere in ResultView
+        assert (
+            hbar.maximum() == 0
+        ), f"Horizontal scrollbar maximum is {hbar.maximum()} (expected 0) at {target_w}x{target_h}"
+
+        # 2. Banner and '查看日志' button inside viewport width
+        btn_top_right = rv.btn_view_logs.mapTo(
+            rv.scroll_area.viewport(), rv.btn_view_logs.rect().topRight()
+        )
+        assert (
+            btn_top_right.x() <= vp_width
+        ), f"'查看日志' right edge ({btn_top_right.x()}) exceeded viewport width ({vp_width}) at {target_w}x{target_h}"
+
+        # 3. Vertical scrollability preserved on small height
+        if target_h <= 120:
+            assert (
+                vbar.maximum() > 0
+            ), "Expected vertical scrollbar to be active for height 120"
+
+    # 4. Payload integrity: all fields accessible in tree and raw JSON
+    assert rv.current_payload["images_dir"] == win_img_dir
+    assert rv.current_payload["labels_dir"] == win_lbl_dir
+    assert len(rv.current_payload["created_labels"]) == 2
+    parsed_json = json.loads(rv.json_view.toPlainText())
+    assert parsed_json["images_dir"] == win_img_dir
+    assert rv.tree_widget.topLevelItemCount() > 0
+    assert rv.table_widget.rowCount() == 2
+
+    rv.close()

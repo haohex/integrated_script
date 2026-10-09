@@ -15,7 +15,7 @@
 | --- | --- | --- | --- | --- |
 | Windows 10 / 11 | x64 | ✅ | ✅ | GUI 使用无控制台窗口入口 |
 | Ubuntu 22.04 | x64 | ✅ | ✅ | 最低 glibc 基线（构建机固定 22.04） |
-| Ubuntu 24.04 | x64 | ✅ | ✅ | 使用 22.04 基线产物，容器 TUI 实际操作已验证；GUI 原生验证待补 |
+| Ubuntu 24.04 | x64 | ✅ | ✅ | 使用 22.04 基线产物，云端 GUI/TUI 实际操作通过 |
 | Ubuntu 22.04+ | arm64 | ✅ | ❌ | 仅 TUI；使用云端 `ubuntu-22.04-arm` 原生构建 |
 
 本次 `v3.0.1` 按用户要求仅发布 Linux、Windows 包，暂不提供 macOS 包。表格描述交付范围；实际运行证据见第 10 节。
@@ -219,14 +219,16 @@ python -m pytest tests/unit/test_offline_packaging.py -q
 
 | 平台 | 构建 | 运行冒烟 | 状态 |
 | --- | --- | --- | --- |
-| Ubuntu 22.04 x64 | ✅ 隔离的 22.04 环境实际构建 | ✅ 最终压缩包解压后断网、无 Python、只读安装目录；TUI 创建标签、PNG→JPEG、1,001 张图片压缩并正常退出；GUI 离屏启动 | Linux 基线验收通过，见验证记录 |
-| Ubuntu 24.04 x64 | 使用 22.04 基线产物 | ✅ 容器内断网 TUI 创建标签及 PNG→JPEG、正常退出 | TUI 容器验收通过；GUI 原生桌面待验证 |
-| Windows x64 | CI 原生 runner | ❌ 未执行 | 未验证 |
-| Linux arm64 | 云端 `ubuntu-22.04-arm` 原生 runner | ❌ 本阶段待执行 | 未验证 |
+| Ubuntu 22.04 x64 | 云端 22.04 原生构建 | 解压后断网 TUI 三操作（含 1,001 张压缩）及 X11 GUI 创建两个空标签，核验输出、正常退出 0；子进程 PATH 无 Python | 功能验收通过 |
+| Ubuntu 24.04 x64 | 使用同一 22.04 基线包 | 断网 TUI 三操作及 X11 GUI 两个空标签，核验输出、正常退出 0；子进程 PATH 无 Python | 兼容运行验收通过 |
+| Windows x64 | Server 2022 原生 runner，GUI/TUI PE 子系统分别验证 | 出站防火墙阻断下 ConPTY TUI 三操作及 GUI 两个空标签，核验输出、正常退出 0；GUI 无控制台泄漏；原生应用缩放五档通过 | 功能验收通过；物理 Win10/11 设备未验证 |
+| Linux arm64 | 云端 `ubuntu-22.04-arm` 原生构建 | 断网 TUI 三操作，1,001 张压缩输出完整，正常退出 0；子进程 PATH 无 Python | 仅 TUI，功能验收通过 |
+
+此表对应提交 `191439e` 的实际云端记录；后续外观收尾提交必须重跑门禁，最终发布包以 [验证报告](verification-report.md)和 Release 的 BUILDINFO 为准。
 
 ## 11. v3.0.1 发布门禁
 
-先通过本地 `make check-all`，再推送开发分支。`Build Artifacts` 在开发分支执行 Linux/Windows 质量检查、原生 GUI 缩放验收、构建、归档校验、解压及真实 GUI/TUI 操作；Linux 通过隔离网络命名空间运行，Windows 为被测程序设置出站阻断规则。测试数据和用户状态全部位于临时目录。
+先通过本地 `make check-all`，再推送开发分支。`Build Artifacts` 在开发分支执行 Linux/Windows 质量检查、原生 GUI 缩放验收、构建、归档校验、解压及真实 GUI/TUI 操作；Linux 通过隔离网络命名空间运行，Windows 为被测程序设置出站阻断规则。测试数据和 cwd 位于临时目录；Linux 用户状态通过 XDG 隔离，Windows 冻结程序使用一次性云端 runner 的系统用户目录，不把 APPDATA 环境变量当作 Known Folder API 的替代。
 
 只有开发分支检查和外观复核通过后才合并 PR。版本标签触发同一门禁，全部通过后自动发布五个软件包、校验和与构建信息。CI 的 `acceptance-*` 附件包含实际截图和运行 JSON；工作流配置本身不表示已经运行成功。
 

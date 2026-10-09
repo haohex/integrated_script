@@ -101,6 +101,7 @@
     1. ResultView 最小尺寸边界约束（`test_result_view_minimum_size_hint_bounded`，杜绝长路径将主窗口挤爆）
     2. 搜索框关键词实时自动联动选中匹配操作（`test_search_auto_selects_first_matching_operation`）
     3. 主操作执行按钮快捷键（`test_main_window_execute_button_has_shortcut`，保证 `Ctrl+Return` 可访问性）
+    4. 真实形态 Windows 长路径无横向滚动条与视口收敛专属回归（`test_result_view_windows_long_path_viewport_containment_and_zero_hscroll`）
   - `test_frozen_gui_controller.py`:
     1. WindowSpecification 与已解析 wrapper（EditWrapper/ButtonWrapper）的 API 差异及存在性检测兼容。
     2. 真实可见主窗口精准选择，彻底剔除 Qt 隐藏辅助窗口与控制台宿主窗口。
@@ -167,10 +168,8 @@ python tests/ui/frozen_gui_smoke.py --executable /path/to/extracted_gui_executab
 | :--- | :--- | :--- | :--- | :--- |
 | **Linux 原生高 DPI 验收 (100%-200%)** | Linux (Ubuntu / WSL2 Xvfb xcb) | `tests/ui/native_acceptance.py` | **已完成 (Passed)** | 1.0, 1.25, 1.5, 1.75, 2.0 全部 5 组 scale 检验通过；明确标识为 QT_SCALE_FACTOR 应用缩放验证；完成中文空格路径空标签创建（0字节验证）与真实 PNG 转 JPEG（PIL.open 核验 JPEG 格式及 64x64/48x48 尺寸）；窗口与框架几何对照 screen.availableGeometry 严格 clamp（960x540），主要执行按钮完全可用，0 关键裁剪。 |
 | **Linux 冻结发布包冒烟验收** | Linux (Ubuntu ELF 二进制) | `tests/ui/frozen_gui_smoke.py` | **已完成 (Passed)** | 经此轮与前轮 GitHub Actions Linux strict 运行实际检验，基于真实提取的二进制文件（`extracted/integrated_script_gui`），在严格环境隔离与 xcb 插件下运行；通过 client 几何相对坐标精准交互完成 `label.create_empty`；严格核验生成 2 个 0 字节真实空标签、有效捕获窗口截图，并通过 X11 WM_PROTOCOLS / WM_DELETE_WINDOW 优雅退出，进程返回码严格为 0。 |
-| **Windows 原生高 DPI 样式证据 (100%-200% 五档完整)** | GitHub Windows Server 2022 (windows 插件，非 Win10/11 物理高 DPI) | `tests/ui/native_acceptance.py` | **已完成 (Passed)** | 真实 GitHub Actions run 37951271896 WindowsServer2022 job 113891028806 产物（5 Native 报告目录共 30 张高精度 PNG 截图与对应 JSON 报告）。100%、125%、150%、175%、200% 全 5 档测试全部 `all_passed=true`。真实业务闭环（空标签 0 字节校验、PIL 严格校验 PNG 转 JPEG 64x64/48x48）全部通过；DPR 合成已修正为完整物理像素分辨率（200% 对应 1024x752，不再发生 1/4 缩小）；小屏 availableGeometry clamp 验证通过，无控件溢出与关键截断。 |
-| **Windows 冻结 exe 冒烟验收** | Windows (PyInstaller .exe) | `tests/ui/frozen_gui_smoke.py` | **待重新云端验收 (Pending Cloud Re-run)** | 在真实 GitHub run 37951271896 中，frozen-gui 已验证正常启动、无控制台泄漏（`console_window_leaked=false`）、交互桌面可用（`interactive_desktop=true` 1024x768）；但因旧驱动逻辑中 `descendants` 返回 `EditWrapper` 缺乏 `exists()` 方法以及使用 `wins[0]` 辅助隐藏窗口发送 WM_CLOSE 导致 8 秒超时，执行失败（exit 1）。现已在 `tests/ui/frozen_gui_smoke.py` 中彻底修复控件存在性兼容（`is_control_existing` / `set_control_text`）、主窗口选择（`select_primary_windows`）及 64 位 Win32 ctypes 签名安全关闭协议。等待主代理 git push 后由 GitHub Actions Windows Runner 重新跑真正 Windows frozen GUI，本地 Linux 模拟通过绝不冒充 Windows 成功。 |
-
-> **注**: 远端 Windows CI 跑完并上传制品后，主代理将通知前端代理对真实 Windows 截图与 DPI 报告进行正式 Review。
+| **Windows 原生高 DPI 样式证据 (100%-200% 五档完整)** | GitHub Windows Server 2022 (windows 插件，非 Win10/11 物理高 DPI) | `tests/ui/native_acceptance.py` | **已完成 (Passed)** | 真实 GitHub Actions run 37951271896 / 37956813768 WindowsServer2022 产物（5 Native 报告目录共 30 张高精度 PNG 截图与对应 JSON 报告）。100%、125%、150%、175%、200% 全 5 档测试全部 `all_passed=true`。真实业务闭环（空标签 0 字节校验、PIL 严格校验 PNG 转 JPEG 64x64/48x48）全部通过；DPR 合成已修正为完整物理像素分辨率（200% 对应 1024x752，不再发生 1/4 缩小）；小屏 availableGeometry clamp 验证通过，无控件溢出与关键截断。 |
+| **Windows 冻结 exe 冒烟验收** | Windows (PyInstaller .exe) | `tests/ui/frozen_gui_smoke.py` | **已完成 (Passed)** | 真实 GitHub Actions run 37956813768 WindowsServer2022 job 产物完全通过。在严格沙箱与真实桌面（1024x768）下，PyInstaller 二进制 `integrated_script_gui.exe` 启动正常、无控制台窗口泄漏（`console_window_leaked=false`）；外部 pywinauto 自动化驱动 `label.create_empty` 完整执行，成功生成 2 个 0 字节真实标签文件（`output_verified=true`, `fixture_output_counts=2`），无 console leak，stderr 为空，并通过 64 位 PostMessageW WM_CLOSE 优雅退出，进程返回码严格为 0（`exit_code=0`, `clean_exit=true`）。针对该次运行产物实机截图发现的结果页视口横向溢出问题，已完成有界收敛修复与专属回归。 |
 
 ---
 
@@ -189,3 +188,71 @@ sudo apt-get update && sudo apt-get install -y xvfb libxcb-cursor0 xdotool
 # 外部 UIAutomation 自动化测试依赖 (Dev/CI 专用，被测 exe 本身不依赖)
 pip install pywinauto pillow
 ```
+
+---
+
+## 9. Windows 冻结 GUI 云端桌面截图审查与有界视觉修复 (GitHub Run 37956813768)
+
+### 9.1 四图实机审查与跨平台环境对比
+
+依据真实产物与各阶段截图证据，严格区分源码 vs 冻结发布包、Windows Server 2022 虚拟 Runner vs 物理 Win10/11 实机、Linux Xvfb vs Windows 桌面环境差异：
+
+| 截图文件路径 | 分辨率与比例 | 运行环境与载体 | 真实窗口状态与视觉评估 |
+| :--- | :--- | :--- | :--- |
+| `/tmp/integrated-proof-191439e/windows-x64/frozen-gui/frozen_gui_smoke.png` | 1024x768 (100%) | GitHub Actions Windows Server 2022 虚拟桌面；PyInstaller 冻结二进制 `integrated_script_gui.exe`；pywinauto 黑盒驱动 | **关键缺陷定位**：包含真实 OS 标题栏与最大化/关闭按钮。执行 `label.create_empty` 后展示 ResultView。左侧导航栏占宽约 280-300px，右侧结果区视口宽约 706px。摘要卡片包含的 Windows 长路径（如 `D:\a\integrated_script\...\测试 图片 样本 目录`）为不可断长字符串，导致两张卡片产生过大 `minimumSizeHint`（>944px），进而撑大 `scroll_content`，触发长横向滚动条；顶部状态横幅被强行拉宽，右侧“查看日志”按钮被推到视口可视边界外，用户必须横向滚动才可见。 |
+| `/tmp/integrated-proof-191439e/windows-x64/native-1/scale_1/light_main.png` | 1024x725 (100%) | Windows Server 2022 原生 windows 插件；源码运行 (`native_acceptance.py`)；浅色主题 | **标准参照**：主窗口启动状态（`CTDS数据转YOLO格式`），窗口高度受 `availableGeometry` 约束自动扣除任务栏高（725px）。Qt 系统字体及中文回退渲染清晰，Fluent 浅色蓝灰调（`#F3F3F3` 基底、`#0067C0` 强蓝色强调），左侧导航树整行连续选中无色块孤岛，右侧表单与操作按钮完整在视口内，无任何水平溢出。 |
+| `/tmp/integrated-proof-191439e/windows-x64/native-2/scale_2/op_image_convert_result.png` | 1024x752 (200% 物理像素) | Windows Server 2022 原生 windows 插件；源码运行 (`native_acceptance.py`)；200% DPI 缩放 | **高 DPI 参照**：执行 `image.convert` 后结果页。展示结构化表格与统计卡片（“Total Converted: 2”等短标量指标）。逻辑客户区为 512x348；PNG 的 1024x752 包含 DPR=2 的客户区截图和 28 逻辑像素验收水印。表格单元格具备独立水平滚动机制，未撑破全局窗口；验证了结果卡片在数值较短时网格可自然容纳，进一步反衬出长路径卡片未设防是导致冻结包溢出的已定位的诱因。 |
+| `/tmp/integrated-proof-191439e/linux-x64/frozen-gui/frozen_gui_smoke.png` | 1200x780 (100%) | Ubuntu Linux 虚拟 Xvfb xcb 插件；PyInstaller 冻结 ELF 二进制；xdotool 驱动 | **平台对比参照**：由于 Linux 验收设定为 1200x780 标准大视口且 Xvfb 无系统标题栏装饰边框，右侧结果区宽度超过 900px，因此横向滚动条未表现出 Windows 1024x768 屏幕下的严重遮挡问题。但此对比明确证明：不同屏幕尺寸与受限视口下必须强制建立有界约束，绝不可依赖视口本身具有无限宽度。 |
+
+### 9.2 关键环境与架构差异界定
+
+1. **源码运行 vs 冻结二进制**:
+   - 源码环境（`.venv`）：携带完整 Python 解释器、动态调试钩子与丰富开发依赖，直接由 Python 入口加载。
+   - 冻结分发包（PyInstaller ELF / `.exe`）：移除 PYTHONPATH/PYTHONHOME，并清理子进程 PATH 对外部 Python 的依赖，使用 onedir 目录分发，入口和 `_internal` 中的运行时及资源一起运行。其窗口创建、消息循环与系统字体均严格遵循目标 OS 的二进制运行时；驱动依赖纯黑盒 OS 级 API（Windows `pywinauto` / `ctypes`，Linux `xdotool`）。
+2. **Windows Server 2022 CI vs 物理 Win10/11 实机**:
+   - CI 环境：固定 Session 虚拟桌面（1024x768 基础分辨率，基础 GDI 虚拟图形适配器），标准经典窗口边框。
+   - 物理实机：常见 1080p/2K/4K 屏幕与 125%/150%/175% 分数 DPI 缩放，具备 DWM 合成器阴影与 Mica/Acrylic 材质。在物理小屏（如 13 寸 1080p@150% 逻辑宽约 1280x720）上，结果视口宽度同样受到类似 700px 的严格限制。
+3. **Linux Xvfb (xcb) vs Windows 原生 (windows)**:
+   - Linux Xvfb 无窗口管理器，窗口原点为 (0, 0)，无 OS 标题栏与最大化控制块；
+   - Windows 原生具有 30-40px 的系统标题栏与约 8px 的非客户区边框（NC frame），因此实际可用客户区高度从 768px 压缩至 725-728px。
+
+### 9.3 有界视觉修复与工程落地实现
+
+为了彻底根除 Windows 冻结实机上长路径撑爆 ResultView 的问题，按照主代理决策实施如下改动（仅改动 `src/integrated_script/ui/desktop/widgets/result_view.py`）：
+
+1. **零宽空格柔性断行算法 (`inject_word_breaks`)**:
+   - 针对路径与无空格长字符串，在分隔符（`\`, `/`, `_`, `-`, `.`, `:`, `;`）后以及连续超过 16 字符的无间隙字符段插入 `\u200b`（零宽空格）。
+   - 让 Qt 内部文本布局器能够在任意可用宽度下优雅折行，长路径自然折为 2-3 行，彻底消灭不可断行长 token。
+2. **零最小宽度约束标签 (`BreakableLabel`)**:
+   - 继承 `QLabel`，覆盖 `minimumSizeHint()` 明确返回 `QSize(0, super().minimumSizeHint().height())`。
+   - 覆盖 `text()` 属性始终返回真实的 raw clean text（无 `\u200b`），保证测试读取与代码逻辑的 100% 保真度。
+   - 应用于横幅消息 `msg_label`、错误代码徽标 `error_code_badge` 以及所有摘要卡片的键值标签。
+3. **响应式摘要卡片与全量数据保全 (`SummaryCard`)**:
+   - 卡片本身 `setMinimumWidth(0)` 且 `minimumSizeHint()` 宽度为 0。
+   - 完整内容保存在 Tooltip 中；值标签支持鼠标选中文本；右键提供自定义上下文菜单“复制完整内容”（一键无损复制原始路径至系统剪贴板）。
+   - 不减小字体，不强制窗口超屏，不修改或删减任何指标数值。
+4. **视口自适应网格重排 (`_relayout_summary_cards`)**:
+   - 根据 `scroll_area.viewport().width()` 动态计算网格列数：
+     - `< 480px`（极窄/小屏）：自适应为 1 列，卡片全宽垂直堆叠；
+     - `480px - 850px`（标准结果视口约 700px）：自适应为 2 列（每列约 330px 宽），长路径两行显示；
+     - `850px - 1100px`：自适应为 3 列；
+     - `>= 1100px`：自适应为 4 列。
+   - 在 `resizeEvent` 中自动触发重排，无论窗口如何拉伸收缩，卡片网格永远贴合视口宽度。
+5. **横向滚动条绝对归零 (`ScrollContentWidget`)**:
+   - `scroll_content` 封装为 `ScrollContentWidget`，限制其最小宽度 hint <= 220px。
+   - `scroll_area.setHorizontalScrollBarPolicy(ScrollBarAlwaysOff)`，在宽度 700 与宽度 326 乃至极端小屏下，`scroll_area.horizontalScrollBar().maximum() == 0`。
+   - 横幅采用中心垂直堆叠结构，横幅整体最小宽度 <= 150px，“查看日志”按钮永远贴合在视口右侧且 100% 可见。
+6. **辅助对比证据（离线生成）**:
+   - 在严格临时 XDG 与临时 ConfigManager 沙箱下生成离线验证图 `/tmp/integrated-proof-191439e/auxiliary/repaired_result_view_700w.png`。
+   - 实测在 700x500 视口下，`hbar max = 0`，`btn_view_logs` 右边缘距离视口边缘 26px，完全位于视口内，卡片排列整齐。
+
+### 9.4 专属回归测试用例
+
+在 `tests/ui/test_native_acceptance_and_overflow_regression.py` 中新增回归测试用例：
+`test_result_view_windows_long_path_viewport_containment_and_zero_hscroll`：
+- 使用真实形态 `OperationResult`（包含 2 条完整 Windows 无空格长路径夹中文，如 `C:\Users\runneradmin\AppData\Local\Temp\integ_smoke_...\测试图像目录_无空格长路径样本集`，以及 2 条创建空标签记录）。
+- 在结果宽度 700 以及小屏宽度 326、高度 120 严格断言：
+  1. `scroll_area.horizontalScrollBar().maximum() == 0`（全屏无横向滚动条）；
+  2. `btn_view_logs` 几何坐标完全在 viewport 宽度之内；
+  3. 高度 120 下 `verticalScrollBar().maximum() > 0`（纵向可滚动正常启用）；
+  4. 结构化表格、层级树、原始 JSON 中所有 payload 数据 100% 完整保留并可正常访问。

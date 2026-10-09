@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QRect, QSize
+from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QMenu,
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
@@ -41,6 +42,110 @@ from integrated_script.ui.shared.theme import (
     load_theme_preference,
     resolve_effective_theme,
 )
+
+
+def inject_word_breaks(text: str, max_chunk: int = 16) -> str:
+    """Inject zero-width spaces into long unbroken tokens to permit natural QLabel wrapping."""
+    if not text:
+        return ""
+    break_chars = set(r"\/_-.#?&=+:;")
+    out: list[str] = []
+    chunk_len = 0
+    for ch in text:
+        out.append(ch)
+        if ch.isspace():
+            chunk_len = 0
+        elif ch in break_chars:
+            out.append("\u200b")
+            chunk_len = 0
+        else:
+            chunk_len += 1
+            if chunk_len >= max_chunk:
+                out.append("\u200b")
+                chunk_len = 0
+    return "".join(out)
+
+
+class BreakableLabel(QLabel):
+    """Word-wrapping QLabel with zero-width minimum size hint to avoid forcing parent layouts wide."""
+
+    def __init__(
+        self,
+        text_or_parent: str | QWidget | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
+        self._raw_text: str = ""
+        if isinstance(text_or_parent, QWidget):
+            super().__init__(text_or_parent)
+        elif isinstance(text_or_parent, str):
+            self._raw_text = text_or_parent
+            super().__init__(text_or_parent, parent)
+        else:
+            super().__init__(parent)
+        self.setWordWrap(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        if self._raw_text:
+            self.setText(self._raw_text)
+
+    def setText(self, text: str) -> None:
+        self._raw_text = text
+        super().setText(inject_word_breaks(text))
+
+    def text(self) -> str:
+        return self._raw_text
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, super().minimumSizeHint().height())
+
+
+class SummaryCard(QFrame):
+    """Summary card displaying a key-value metric with responsive wrapping and copy capability."""
+
+    def __init__(self, label: str, value: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._raw_value = value
+        self.setObjectName("surface_panel")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setMinimumWidth(0)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(2)
+
+        self.k_lbl = BreakableLabel(label, self)
+        self.k_lbl.setObjectName("field_help")
+        layout.addWidget(self.k_lbl)
+
+        self.v_lbl = BreakableLabel(value, self)
+        self.v_lbl.setObjectName("section_heading")
+        self.v_lbl.setToolTip(value)
+        self.v_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        layout.addWidget(self.v_lbl)
+
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(0, super().minimumSizeHint().height())
+
+    def _show_context_menu(self, pos: Any) -> None:
+        menu = QMenu(self)
+        copy_act = menu.addAction(get_icon("copy"), "复制完整内容")
+        copy_act.triggered.connect(self._copy_value)
+        menu.exec(self.mapToGlobal(pos))
+
+    def _copy_value(self) -> None:
+        cb = QApplication.clipboard()
+        if cb:
+            cb.setText(self._raw_value)
+
+
+class ScrollContentWidget(QWidget):
+    """Container widget that respects viewport width constraints and never forces horizontal expansion."""
+
+    def minimumSizeHint(self) -> QSize:
+        hint = super().minimumSizeHint()
+        return QSize(min(220, hint.width()), hint.height())
 
 
 class LogViewerDialog(QDialog):
@@ -144,17 +249,22 @@ class ResultView(QWidget):
         super().__init__(parent)
         self.current_payload: dict[str, Any] = {}
         self._last_result: OperationResult | None = None
+        self._summary_cards: list[SummaryCard] = []
+        self._current_summary_cols: int | None = None
 
         self.root_layout = QVBoxLayout(self)
         self.root_layout.setContentsMargins(0, 0, 0, 0)
         self.root_layout.setSpacing(0)
 
-        # Scroll area container for result content so it is scrollable and never clipped
+        # Scroll area container for result content so it is scrollable and never clipped horizontally
         self.scroll_area = QScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
 
-        self.scroll_content = QWidget(self.scroll_area)
+        self.scroll_content = ScrollContentWidget(self.scroll_area)
         self.main_layout = QVBoxLayout(self.scroll_content)
         self.main_layout.setContentsMargins(12, 12, 12, 12)
         self.main_layout.setSpacing(12)
@@ -168,14 +278,19 @@ class ResultView(QWidget):
         self.icon_label = QLabel(self.banner)
         self.banner_layout.addWidget(self.icon_label)
 
-        self.msg_label = QLabel(self.banner)
-        self.msg_label.setWordWrap(True)
-        self.banner_layout.addWidget(self.msg_label, 1)
+        self.banner_center = QVBoxLayout()
+        self.banner_center.setContentsMargins(0, 0, 0, 0)
+        self.banner_center.setSpacing(4)
 
-        self.error_code_badge = QLabel(self.banner)
+        self.msg_label = BreakableLabel(parent=self.banner)
+        self.banner_center.addWidget(self.msg_label)
+
+        self.error_code_badge = BreakableLabel(parent=self.banner)
         self.error_code_badge.setObjectName("badge_destructive")
         self.error_code_badge.setVisible(False)
-        self.banner_layout.addWidget(self.error_code_badge)
+        self.banner_center.addWidget(self.error_code_badge)
+
+        self.banner_layout.addLayout(self.banner_center, 1)
 
         self.btn_view_logs = QPushButton("查看日志", self.banner)
         self.btn_view_logs.setIcon(get_icon("terminal"))
@@ -276,6 +391,45 @@ class ResultView(QWidget):
         """Return constrained responsive minimum size hint to prevent dialog/parent clipping."""
         return QSize(260, 80)
 
+    def _relayout_summary_cards(self, target_width: int | None = None) -> None:
+        """Rearrange summary cards into responsive grid columns based on available viewport width."""
+        if not self._summary_cards:
+            return
+        w = (
+            target_width
+            if target_width is not None
+            else self.scroll_area.viewport().width()
+        )
+        if w <= 0:
+            w = self.width()
+
+        n = len(self._summary_cards)
+        if w < 480:
+            cols = 1
+        elif w < 850:
+            cols = min(2, n)
+        elif w < 1100:
+            cols = min(3, n)
+        else:
+            cols = min(4, n)
+        cols = max(1, cols)
+
+        if getattr(self, "_current_summary_cols", None) == cols:
+            return
+        self._current_summary_cols = cols
+
+        while self.summary_grid.count():
+            self.summary_grid.takeAt(0)
+
+        for idx, card in enumerate(self._summary_cards):
+            r = idx // cols
+            c = idx % cols
+            self.summary_grid.addWidget(card, r, c)
+
+    def resizeEvent(self, event: Any) -> None:
+        super().resizeEvent(event)
+        self._relayout_summary_cards(self.scroll_area.viewport().width())
+
     def update_theme(self, theme_name: str | None = None) -> None:
         """Update banner colors and icons according to theme without modifying payload or tab state."""
         eff_theme = theme_name or resolve_effective_theme(load_theme_preference())
@@ -366,11 +520,14 @@ class ResultView(QWidget):
         # Status message and error code badge
         if op_result.success:
             self.msg_label.setText(op_result.message or "操作执行成功。")
+            self.msg_label.setToolTip(op_result.message or "操作执行成功。")
             self.error_code_badge.setVisible(False)
         else:
             self.msg_label.setText(op_result.message or "操作执行失败。")
+            self.msg_label.setToolTip(op_result.message or "操作执行失败。")
             if op_result.error_code:
                 self.error_code_badge.setText(f"错误码: {op_result.error_code}")
+                self.error_code_badge.setToolTip(f"错误码: {op_result.error_code}")
                 self.error_code_badge.setVisible(True)
             else:
                 self.error_code_badge.setVisible(False)
@@ -381,34 +538,20 @@ class ResultView(QWidget):
             widget = item.widget()
             if widget:
                 widget.deleteLater()
+        self._summary_cards = []
+        self._current_summary_cols = None
 
         # Extract Summary Items
         summary_items = extract_summary_items(self.current_payload)
-        max_cols = 4
-        for idx, summary_entry in enumerate(summary_items[:8]):  # show top 8
-            card = QFrame(self.summary_container)
-            card.setObjectName("surface_panel")
-            card.setSizePolicy(
-                QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred
+        for summary_entry in summary_items[:8]:  # show top 8
+            card = SummaryCard(
+                label=summary_entry.label,
+                value=str(summary_entry.value),
+                parent=self.summary_container,
             )
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(10, 8, 10, 8)
-            card_layout.setSpacing(2)
+            self._summary_cards.append(card)
 
-            k_lbl = QLabel(summary_entry.label, card)
-            k_lbl.setObjectName("field_help")
-            k_lbl.setWordWrap(True)
-            card_layout.addWidget(k_lbl)
-
-            v_lbl = QLabel(str(summary_entry.value), card)
-            v_lbl.setObjectName("section_heading")
-            v_lbl.setWordWrap(True)
-            v_lbl.setToolTip(str(summary_entry.value))
-            card_layout.addWidget(v_lbl)
-
-            r = idx // max_cols
-            c = idx % max_cols
-            self.summary_grid.addWidget(card, r, c)
+        self._relayout_summary_cards()
 
         # Extract Tables
         tables = extract_tables(self.current_payload)
