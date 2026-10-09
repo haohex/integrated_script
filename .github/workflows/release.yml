@@ -23,10 +23,21 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Download build artifacts
+    - name: Download verified offline packages
       uses: actions/download-artifact@v4
       with:
-        path: dist
+        pattern: offline-*
+        merge-multiple: true
+        path: release-assets
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Verify complete release contents and checksums
+      env:
+        TAG: ${{ github.ref_name }}
+      run: python scripts/verify_artifacts.py release --directory release-assets --tag "$TAG"
 
     - name: Generate release notes
       env:
@@ -153,7 +164,7 @@ jobs:
           "其他": [],
         }
 
-        type_re = re.compile(r"^(?P<type>\\w+)(?:\\((?P<scope>[^)]+)\\))?:\\s*(?P<msg>.+)$")
+        type_re = re.compile(r"^(?P<type>\w+)(?:\((?P<scope>[^)]+)\))?:\s*(?P<msg>.+)$")
 
         for ln in lines:
           subject, sha = ln.rsplit("|", 1)
@@ -231,9 +242,11 @@ jobs:
       uses: softprops/action-gh-release@v2
       with:
         files: |
-          dist/windows-amd64/integrated_script-${{ github.ref_name }}-windows-amd64.exe
-          dist/linux-amd64/integrated_script-${{ github.ref_name }}-linux-amd64
-          dist/linux-arm64/integrated_script-${{ github.ref_name }}-linux-arm64
+          release-assets/*.zip
+          release-assets/*.tar.gz
+          release-assets/*.txt
+          release-assets/*.json
+        fail_on_unmatched_files: true
         body_path: release_body.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

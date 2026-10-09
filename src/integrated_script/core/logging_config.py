@@ -216,6 +216,28 @@ class LogManager:
 _log_manager: Optional[LogManager] = None
 
 
+def _default_log_dir() -> str:
+    """未显式指定时的日志目录：用户可写目录，而不是 cwd/安装目录。
+
+    直接使用 ``platformdirs``，不导入 ``application`` 包，避免包初始化
+    阶段的循环导入；解析结果与 ``application.paths.AppPaths`` 一致。
+    """
+    try:
+        from platformdirs import PlatformDirs
+
+        return str(
+            PlatformDirs(
+                appname="integrated_script", appauthor="IntegratedScript"
+            ).user_log_dir
+        )
+    except Exception:  # pragma: no cover - platformdirs 不可用时的保守回退
+        base = os.environ.get("XDG_STATE_HOME")
+        root = (
+            Path(base) if base else Path(os.path.expanduser("~")) / ".local" / "state"
+        )
+        return str(root / "integrated_script" / "log")
+
+
 def setup_logging(
     log_dir: str = "logs", log_level: str = "INFO", enable_error_file: bool = True
 ) -> LogManager:
@@ -251,7 +273,7 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     global _log_manager
 
     if _log_manager is None:
-        _log_manager = setup_logging()
+        _log_manager = setup_logging(log_dir=_default_log_dir())
 
     if name is None:
         # 自动获取调用模块名
@@ -277,6 +299,6 @@ def set_log_level(level: str) -> None:
     global _log_manager
 
     if _log_manager is None:
-        _log_manager = setup_logging()
+        _log_manager = setup_logging(log_dir=_default_log_dir())
 
     _log_manager.set_level(level)

@@ -6,6 +6,7 @@ import pytest
 
 from integrated_script.main import (
     ConfigManager,
+    default_log_dir,
     load_config_from_args,
     main,
     run_build_mode,
@@ -65,6 +66,8 @@ def _args(**overrides):
         "log_file": None,
         "config": None,
         "build": False,
+        "legacy_cli": False,
+        "gui": False,
     }
     data.update(overrides)
     return SimpleNamespace(**data)
@@ -88,6 +91,18 @@ def test_setup_argument_parser_version_matches_unified_source(capsys) -> None:
     assert get_version() in captured.out
 
 
+def test_setup_argument_parser_parses_frontend_flags() -> None:
+    parser = setup_argument_parser()
+
+    legacy = parser.parse_args(["--legacy-cli"])
+    gui = parser.parse_args(["--gui"])
+
+    assert legacy.legacy_cli is True
+    assert legacy.gui is False
+    assert gui.gui is True
+    assert gui.legacy_cli is False
+
+
 def test_setup_logging_from_args_respects_quiet(monkeypatch) -> None:
     captured = {}
 
@@ -97,14 +112,23 @@ def test_setup_logging_from_args_respects_quiet(monkeypatch) -> None:
         captured["enable_error_file"] = enable_error_file
 
     monkeypatch.setattr("integrated_script.main.setup_logging", _fake_setup_logging)
+    monkeypatch.setattr(
+        "integrated_script.main.default_log_dir", lambda: "/tmp/user-logs"
+    )
 
     setup_logging_from_args(_args(quiet=True))
 
     assert captured == {
-        "log_dir": "logs",
+        "log_dir": "/tmp/user-logs",
         "log_level": "WARNING",
         "enable_error_file": True,
     }
+
+
+def test_default_log_dir_is_not_cwd_logs() -> None:
+    log_dir = Path(default_log_dir())
+    assert log_dir.is_absolute()
+    assert log_dir != Path.cwd() / "logs"
 
 
 def test_setup_logging_from_args_uses_verbose_and_log_file_dir(
@@ -309,18 +333,89 @@ def test_main_build_branch_returns_sub_result(monkeypatch) -> None:
     assert result == 7
 
 
-def test_main_interactive_branch_returns_sub_result(monkeypatch) -> None:
+def test_main_default_branch_uses_tui(monkeypatch) -> None:
+    calls = {}
+
     monkeypatch.setattr(
         "integrated_script.main.setup_logging_from_args", lambda _args: None
     )
     monkeypatch.setattr(
-        "integrated_script.main.load_config_from_args", lambda _args: object()
+        "integrated_script.main.load_config_from_args", lambda _args: None
     )
-    monkeypatch.setattr("integrated_script.main.run_interactive_mode", lambda _cfg: 0)
+
+    def _fake_tui(config_manager, working_directory):
+        calls["config"] = config_manager
+        calls["cwd"] = working_directory
+        return 0
+
+    monkeypatch.setattr("integrated_script.main.run_tui_mode", _fake_tui)
+    monkeypatch.setattr(
+        "integrated_script.main.run_interactive_mode",
+        lambda _cfg: pytest.fail("默认入口不应进入旧交互模式"),
+    )
 
     result = main([])
 
     assert result == 0
+    assert calls["config"] is None
+    assert calls["cwd"] == Path.cwd()
+
+
+def test_main_default_branch_does_not_create_cwd_config(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """默认 TUI 入口不得在 cwd 创建 config.json。"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "integrated_script.main.setup_logging_from_args", lambda _args: None
+    )
+    monkeypatch.setattr("integrated_script.main.run_tui_mode", lambda _cfg, _cwd: 0)
+
+    assert main([]) == 0
+    assert not (tmp_path / "config.json").exists()
+
+
+def test_main_legacy_cli_branch_uses_interactive_mode(monkeypatch) -> None:
+    captured = {}
+
+    monkeypatch.setattr(
+        "integrated_script.main.setup_logging_from_args", lambda _args: None
+    )
+    monkeypatch.setattr(
+        "integrated_script.main.run_interactive_mode",
+        lambda cfg: captured.update({"config": cfg}) or 0,
+    )
+    monkeypatch.setattr(
+        "integrated_script.main.run_tui_mode",
+        lambda *_args: pytest.fail("--legacy-cli 不应进入 TUI"),
+    )
+
+    result = main(["--legacy-cli"])
+
+    assert result == 0
+    assert isinstance(captured["config"], ConfigManager)
+
+
+def test_main_gui_branch_uses_gui_mode(monkeypatch) -> None:
+    captured = {}
+
+    monkeypatch.setattr(
+        "integrated_script.main.setup_logging_from_args", lambda _args: None
+    )
+    monkeypatch.setattr(
+        "integrated_script.main.run_gui_mode",
+        lambda cfg, cwd: captured.update({"config": cfg, "cwd": cwd}) or 0,
+    )
+    monkeypatch.setattr(
+        "integrated_script.main.run_tui_mode",
+        lambda *_args: pytest.fail("--gui 不应进入 TUI"),
+    )
+
+    result = main(["--gui"])
+
+    assert result == 0
+    assert captured["config"] is None
+    assert captured["cwd"] == Path.cwd()
 
 
 def test_main_returns_one_on_unhandled_exception(monkeypatch) -> None:
@@ -334,12 +429,10 @@ def test_main_returns_one_on_unhandled_exception(monkeypatch) -> None:
         "integrated_script.main.load_config_from_args", lambda _args: object()
     )
 
-    def _raise_run_interactive(_config):
+    def _raise_run_tui(_config, _cwd):
         raise RuntimeError("unexpected")
 
-    monkeypatch.setattr(
-        "integrated_script.main.run_interactive_mode", _raise_run_interactive
-    )
+    monkeypatch.setattr("integrated_script.main.run_tui_mode", _raise_run_tui)
 
     result = main([])
 

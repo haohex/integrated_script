@@ -2,33 +2,43 @@
 
 本指南以“当前程序实际功能”为准，覆盖安装、启动、打包与常用配置。
 
+普通用户直接从 [发布页](https://github.com/haohex/integrated_script/releases/latest) 下载对应平台的软件包，无需安装 Python。Windows 客户端选择 `windows-x64-gui.zip`，完整解压后打开 `integrated_script_gui.exe`；Linux 客户端选择 `linux-x64-gui.tar.gz`。终端界面选择 `tui` 包。保留 `_internal` 目录。
+
 ## 1. 环境准备
 
-- Python 3.8+
-- Windows / Linux / macOS
+- Python 3.11+
+- 本次离线包：Windows x64 / Ubuntu 22.04、24.04 x64 / Linux ARM64 TUI；不提供 macOS 包
 
-安装依赖：
+安装依赖（默认终端界面，不含 Qt）：
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-runtime.txt
 ```
 
-或开发模式：
+或安装/开发模式：
 
 ```bash
-pip install -e .
+pip install -e .            # TUI + 核心
+pip install -e .[gui]       # 需要 Qt 桌面界面时
+pip install -e .[dev,gui,dev-ui]   # 开发 + 界面测试
 ```
 
 ## 2. 启动方式
 
-交互式菜单为主入口：
-
 ```bash
-# 方式一：直接运行
+# 默认：终端界面（TUI）
 python main.py
 
-# 方式二：安装后使用命令
-integrated-script
+# 桌面界面（需安装 [gui]）
+python main.py --gui
+
+# 旧交互式命令行（兼容回退）
+python main.py --legacy-cli
+
+# 安装后
+integrated-script            # 默认 TUI
+integrated-script-gui        # GUI 专用入口（Windows 无控制台窗口）
+integrated-script --legacy-cli
 ```
 
 常用参数：
@@ -36,10 +46,10 @@ integrated-script
 ```bash
 integrated-script --config path/to/config.yaml
 integrated-script --log-level DEBUG
-integrated-script --build
+integrated-script --build          # 构建默认 TUI 产物
 ```
 
-说明：命令行参数用于配置/日志/打包辅助，核心功能均在交互式菜单内。
+说明：配置/日志写入用户目录；当前目录存在旧配置时首次使用会提示导入，原文件保留。
 
 ## 3. 主要功能入口（菜单）
 
@@ -70,11 +80,18 @@ integrated-script --build
 ## 4. 构建可执行文件
 
 ```bash
-pip install pyinstaller
-python build_exe.py
+# TUI 产物（不含 Qt）
+pip install -r requirements-build.txt
+python build_exe.py --mode tui     # 终端界面（默认）
+
+# GUI 产物（安装固定版本 PySide6==6.8.3）
+pip install -r requirements-build-gui.txt
+python build_exe.py --mode gui     # 桌面界面（Windows 无控制台）
+python build_exe.py --mode all     # 依次构建两者
 ```
 
-产物位于 `dist/` 目录。
+产物位于 `dist/integrated_script/`（TUI）与 `dist/integrated_script_gui/`（GUI）。
+详见 `docs/offline-deployment.md`。
 
 ## 5. 配置文件
 
@@ -91,8 +108,28 @@ python build_exe.py
 ### 依赖未安装
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-runtime.txt
 ```
+
+### TUI 无法启动 / 提示缺少终端组件
+
+确认已安装运行期依赖（含 `textual`）：
+
+```bash
+pip install -r requirements-runtime.txt
+```
+
+仍不可用时可用旧界面回退：`integrated-script --legacy-cli`。
+
+### GUI 无法启动
+
+Qt 桌面界面需要显式安装：
+
+```bash
+pip install -e .[gui]
+```
+
+Linux 上还需要系统图形依赖，见 `docs/offline-deployment.md`。
 
 ### OpenCV 读取失败
 

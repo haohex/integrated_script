@@ -1,0 +1,6 @@
+# CI controllers only; never installed into the offline application bundle.
+Pillow==12.3.0
+pyte==0.8.2
+pexpect==4.9.0 ; sys_platform != 'win32'
+pywinpty==3.0.5 ; sys_platform == 'win32'
+pywinauto==0.6.9 ; sys_platform == 'win32'

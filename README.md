@@ -57,23 +57,37 @@
 
 ### 3.1 启动链路
 
-1. `main.py`（仓库根）
-2. `src/integrated_script/main.py`
-3. `src/integrated_script/ui/interactive.py`
-4. `src/integrated_script/ui/menu.py` + 各 `processors/*`
+`main.py` 和安装后的启动器进入 `src/integrated_script/main.py`，默认启动 TUI；桌面入口启动 GUI，`--legacy-cli` 保留旧交互。
+
+```mermaid
+flowchart TD
+    GUI[PySide6 桌面客户端] --> APP[application 共享应用服务]
+    TUI[Textual 终端界面] --> APP
+    APP --> WF[workflows 业务适配]
+    LEGACY[旧交互兼容入口] --> WF
+    WF --> PROC[processors 原有处理算法]
+    APP --> INFRA[用户目录、配置、日志与进度事件]
+    PROC --> INFRA
+```
 
 ### 3.2 模块职责
+
+分层决策与 GitHub 参考见 [架构与设计依据](docs/architecture.md)。
 
 - `config/`：配置加载、保存、重置、轻量校验、异常定义。
 - `core/`：基础设施（日志、进度、文件安全工具、平台兼容）。
 - `processors/`：所有业务处理能力（YOLO / image / file / label）。
-- `ui/`：菜单路由、用户输入、结果展示。
+- `application/`：操作目录、参数解释、后台任务、预检与确认流程；GUI/TUI 共用。
+- `contracts/`、`workflows/`：结构化结果和既有处理器适配，保留旧调用契约。
+- `ui/desktop/`、`ui/tui/`：各平台控件、用户输入和结果展示；`ui/shared/` 只含共享展示辅助。
 - `scripts/`：打包、发布、版本脚本（非主菜单核心能力）。
 
 ### 3.3 关键边界约定
 
 - **UI 层不做重计算**：负责输入与展示，核心处理在 processors。
-- **结果结构化返回**：处理器返回字典，UI 统一渲染。
+- **结果结构化返回**：处理器保留原有字典，应用层归一化为 `OperationResult`，两端完整渲染。
+- **流程只有一个来源**：类型确认、类别顺序和危险操作确认由应用服务产生，两端通过同一事件/应答接口推进。
+- **可空参数保留语义**：配置编辑中的 `None` 表示保持原值，不能转成 `0` 或 `False`。
 - **路径为系统边界**：路径输入先校验、规范化，再执行处理。
 - **高风险操作需确认**：删除、重命名、覆盖前提供确认或试运行分支。
 
@@ -83,23 +97,41 @@
 
 ## 4.1 环境要求
 
-- Python 3.8+（环境检查通过基线）
-- Windows / Linux / macOS
+- **Python 3.11+**（源码运行）；离线可执行文件不要求目标机器安装 Python。
+- 本次离线发布覆盖 Windows x64、Ubuntu 22.04/24.04 x64，以及 Linux ARM64 TUI，暂不提供 macOS 包。
+- 默认入口为**终端界面（TUI，基于 Textual）**；桌面界面（GUI，基于 PySide6）为显式可选组件。
 
 ### 4.2 安装
 
+普通用户从 [GitHub Releases](https://github.com/haohex/integrated_script/releases/latest) 下载对应平台的 `gui` 或 `tui` 包，完整解压后运行其中的程序，不需要安装 Python。Windows 桌面入口是 `integrated_script_gui.exe`；Linux 桌面入口是 `integrated_script_gui`。保留同目录的 `_internal` 文件夹。下列安装命令供源码运行与开发使用。
+
 ```bash
-pip install -r requirements.txt
-# 或开发模式
+# 仅运行 / 开发（TUI + 核心，不安装 Qt）
+pip install -r requirements-runtime.txt
+# 或
 pip install -e .
+
+# 需要 Qt 桌面界面时显式安装（源码开发用户）
+pip install -e .[gui]
+
+# 开发 + 界面测试依赖
+pip install -e .[dev,gui,dev-ui]
 ```
+
+> `integrated-script` 默认启动 TUI，**不会**因为缺少 Qt 而无法运行。
 
 ### 4.3 启动
 
 ```bash
-python main.py
-# 或安装后
+python main.py                 # 默认：终端界面（TUI）
+python main.py --legacy-cli    # 旧交互式命令行界面（兼容回退）
+python main.py --gui           # Qt 桌面界面（需安装 [gui]）
+
+# 安装后（console 入口，默认 TUI）
 integrated-script
+
+# 安装后（GUI 专用入口；Windows 下为无控制台窗口启动器）
+integrated-script-gui
 ```
 
 ### 4.4 常用参数
@@ -107,16 +139,20 @@ integrated-script
 ```bash
 integrated-script --config path/to/config.yaml
 integrated-script --log-level DEBUG
-integrated-script --build
+integrated-script --legacy-cli
+integrated-script --build                  # 构建默认 TUI 产物（调用 build_exe.py，等价 --mode tui）
+python build_exe.py --mode gui             # 构建 GUI 产物（详见第 10 节）
 ```
 
-> 当前设计中，核心业务操作通过交互式菜单完成，CLI 参数主要用于配置/日志/打包辅助。
+> 配置、日志与缓存写入用户目录（`platformdirs`），不再默认写入当前工作目录；
+> 显式 `--config` 仍然优先。首次执行操作时，若用户配置尚不存在且当前目录存在旧配置，会提示是否导入，
+> **原文件不会被删除或覆盖**。
 
 ---
 
 ## 5. 主菜单与子菜单总览
 
-> 主菜单在非 EXE 环境下会显示“环境检查与配置”；EXE 环境默认隐藏该入口并执行静默检查。
+> GUI/TUI 在源码环境显示“环境检查与配置”，打包环境隐藏该入口。旧交互入口保留其原有环境预检流程。
 
 ### 5.1 主菜单
 
@@ -154,7 +190,7 @@ integrated-script --build
 - 单目录重命名
 - 数据集重命名
 - 数据集重命名（传统模式）
-- 按扩展名组织文件（暂未开放）
+- 按扩展名组织文件
 - 递归删除JSON文件
 - 批量复制文件
 - 批量移动文件
@@ -435,11 +471,12 @@ integrated-script --build
 
 ---
 
-### 6.3.3 按扩展名组织文件（当前版本暂未开放）
+### 6.3.3 按扩展名组织文件
 
-- 当前主菜单存在该入口；
-- 处理器侧尚未提供对应公开方法实现（`FileProcessor.organize_by_extension`）；
-- 现阶段请不要将其视为可用功能，避免运行时触发方法不存在错误。
+- 使用已有 `FileProcessor.organize_by_extension`，仅处理源目录的一级文件。
+- 按小写扩展名分目录，无扩展名的文件归入 `no_extension`；输出目录默认为源目录。
+- 默认移动文件，也可选择复制；目标名称冲突时生成唯一文件名。
+- 结果包含成功、失败明细及复制/移动数量。此处修正旧文档描述，处理算法未变更。
 
 ---
 
@@ -618,32 +655,65 @@ integrated-script --build
 
 ## 10. 打包与发布（单人开发标准流程）
 
-### 10.1 打包
+> 完整的离线交付说明（支持平台、资源与许可证、Linux 图形依赖、签名限制）见
+> [`docs/offline-deployment.md`](docs/offline-deployment.md)。
+
+### 10.1 打包（离线自包含产物）
+
+构建机可以联网安装依赖；**产物在目标机器离线运行，不依赖已安装的 Python**。
 
 ```bash
-pip install pyinstaller
-python build_exe.py
-# 或
-integrated-script --build
+pip install -r requirements-build.txt
+python build_exe.py --mode tui     # 终端界面（console，含 Textual，不含 Qt）
+
+pip install -r requirements-build-gui.txt
+python build_exe.py --mode gui     # 桌面界面（Windows 下无控制台窗口，固定 PySide6 6.8.3）
+python build_exe.py --mode all     # 依次构建两者（需先装 GUI 构建锁）
 ```
+
+> `integrated-script --build` 等价于 `python build_exe.py`（默认 TUI）；需要 GUI 产物时
+> 直接调用 `build_exe.py --mode gui`。
+
+产物为 **onedir** 目录：
+
+- TUI：`dist/integrated_script/`（可执行文件 `integrated_script[.exe]`）
+- GUI：`dist/integrated_script_gui/`（可执行文件 `integrated_script_gui[.exe]`）
+
+打包分发包：
+
+```bash
+python scripts/package_artifacts.py --mode tui --platform linux \
+    --arch x64 --tag v3.0.1                  # 默认输出 dist/artifacts/
+```
+
+命名规则：`integrated-script-<tag>-<platform>-<arch>-<mode>.{zip,tar.gz}`。
+发布页提供 Windows x64、Linux x64 的 GUI/TUI，Linux ARM64 TUI，以及校验和与构建信息。
+
+> 跨平台产物必须在对应原生 runner 上构建（Windows / Linux 分别构建）；
+> 单机只能生成当前平台产物。Linux 下建议在 `ubuntu:22.04` 隔离环境中构建以取得
+> 最低 glibc 基线；在较新主机（如 Ubuntu 26.04 / glibc 2.43）上构建的包**不保证**
+> 在旧系统运行，详见 [`docs/offline-deployment.md`](docs/offline-deployment.md)。
 
 ### 10.2 发布（推荐：tag 驱动自动发布）
 
 当前仓库以 GitHub Actions 的 `release.yml` 作为唯一发布入口：
-- 触发条件：push tag（`v*.*.*`）
-- 自动执行：多平台构建 + 上传 Release 附件 + 生成发布说明
 
-发布前建议：
+- 触发条件：push tag（`v*.*.*`）
+- 自动执行：Linux/Windows 质量检查、原生构建、解压包真实操作、完整性门禁，全部通过后上传 Release 附件并生成发布说明
+
+发布顺序：
+
 1. 更新 `pyproject.toml` 的版本号；
-2. 运行一次 `make check-all`；
-3. 使用 annotated tag 写入发布概况块；
-4. push tag 触发发布。
+2. 本地运行 `make check-all`，通过后推送 `dev/*` 开发分支并创建 PR；
+3. 等待开发分支云端测试、实际运行、构建通过，复核 GUI 截图后合并 PR；
+4. 在已验收合并提交上使用 annotated tag 写入发布概况；
+5. push tag 触发发布，并核对发布页的软件包与 `SHA256SUMS.txt`。
 
 示例：
 
 ```bash
-git tag -a v2.0.3 -m "$(cat <<'EOF'
-release: v2.0.3
+git tag -a v3.0.1 -m "$(cat <<'EOF'
+release: v3.0.1
 
 <!-- release-overview:start -->
 ## 发布概况
@@ -653,7 +723,7 @@ release: v2.0.3
 EOF
 )"
 
-git push origin v2.0.3
+git push origin v3.0.1
 ```
 
 ### 10.3 Release 页面内容生成规则（`release.yml`）
