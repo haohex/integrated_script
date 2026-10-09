@@ -6,6 +6,8 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from rich.markup import escape
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -156,6 +158,7 @@ class TuiApp(App[int]):
         form_container.mount(self.current_form)
 
         # Reset states
+        self.query_one("#progress_bar", ProgressBar).update(total=100, progress=0)
         self.query_one("#exec_panel").styles.display = "none"
         self.query_one("#result_panel").styles.display = "none"
         self.query_one("#lbl_status", Label).update("就绪")
@@ -255,25 +258,28 @@ class TuiApp(App[int]):
                 self.query_one("#lbl_status", Label).update("执行中...")
                 if event.message:
                     self.query_one("#lbl_step", Label).update(
-                        f"[bold]{event.message}[/bold]"
+                        Text(event.message, style="bold")
                     )
                     self.query_one("#log_view", RichLog).write(
-                        f"[blue][INFO][/blue] {event.message}"
+                        f"[blue][INFO][/blue] {escape(event.message)}"
                     )
 
             elif event.kind == "progress":
-                if event.total and event.total > 0 and event.current is not None:
-                    pct = int((event.current / event.total) * 100)
-                    self.query_one("#progress_bar", ProgressBar).update(
-                        progress=pct, total=100
-                    )
+                pbar = self.query_one("#progress_bar", ProgressBar)
+                cur = getattr(event, "current", None)
+                tot = getattr(event, "total", None)
+                if tot is not None and tot > 0 and cur is not None:
+                    pct = int((cur / tot) * 100)
+                    pbar.update(total=100, progress=pct)
+                else:
+                    pbar.update(total=None, progress=0)
                 if event.message:
-                    self.query_one("#lbl_step", Label).update(event.message)
+                    self.query_one("#lbl_step", Label).update(Text(event.message))
 
             elif event.kind == "log":
                 if event.message:
                     self.query_one("#log_view", RichLog).write(
-                        f"[dim]{event.message}[/dim]"
+                        f"[dim]{escape(event.message)}[/dim]"
                     )
 
             elif event.kind == "interaction":
@@ -281,6 +287,9 @@ class TuiApp(App[int]):
                     self._show_interaction_modal(event.task_id, event.interaction)
 
             elif event.kind == "completed":
+                self.query_one("#progress_bar", ProgressBar).update(
+                    total=100, progress=100
+                )
                 self.query_one("#btn_run", Button).disabled = False
                 self.query_one("#exec_panel").styles.display = "none"
 

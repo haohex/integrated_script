@@ -16,6 +16,7 @@ from typing import List, Optional
 
 from .config import ConfigManager
 from .core.logging_config import get_logger, setup_logging
+from .core.windows_compat import setup_console_encoding
 from .ui.interactive import InteractiveInterface
 from .version import get_version
 
@@ -95,6 +96,9 @@ def setup_logging_from_args(args) -> None:
     Args:
         args: 命令行参数
     """
+    # 冻结 GUI 可能只有 stderr 管道，环境变量不能重配已经创建的标准流。
+    setup_console_encoding()
+
     # 确定日志级别
     log_level = args.log_level
     if args.quiet:

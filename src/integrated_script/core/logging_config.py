@@ -119,15 +119,17 @@ class LogManager:
             root_logger.removeHandler(handler)
 
         # 添加控制台处理器
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(getattr(logging, self.log_level))
+        stream = sys.stdout if sys.stdout is not None else sys.stderr
+        if stream is not None:
+            console_handler = logging.StreamHandler(stream)
+            console_handler.setLevel(getattr(logging, self.log_level))
 
-        # 控制台格式（支持颜色和Windows兼容性）
-        console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        console_formatter = ColoredFormatter(console_format)
-        console_handler.setFormatter(console_formatter)
+            # 控制台格式（支持颜色和Windows兼容性）
+            console_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            console_formatter = ColoredFormatter(console_format)
+            console_handler.setFormatter(console_formatter)
 
-        root_logger.addHandler(console_handler)
+            root_logger.addHandler(console_handler)
 
         # 添加文件处理器
         log_file = (

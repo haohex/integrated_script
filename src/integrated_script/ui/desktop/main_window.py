@@ -569,6 +569,8 @@ class MainWindow(QMainWindow):
         # Reset execution state views
         self.exec_panel.setVisible(False)
         self.result_view.setVisible(False)
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
         self.log_edit.clear()
         self.result_view.clear_logs()
         self.lbl_status.setText("就绪")
@@ -628,6 +630,7 @@ class MainWindow(QMainWindow):
                 self.btn_toggle_params.setVisible(False)
             self.exec_panel.setVisible(True)
             self.result_view.setVisible(False)
+            self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(0)
             self.lbl_step.setText("正在启动任务...")
             self.log_edit.clear()
@@ -656,12 +659,19 @@ class MainWindow(QMainWindow):
                 self.log_edit.appendPlainText(msg)
 
         elif kind == "progress":
-            cur = getattr(event, "current", 0) or 0
-            tot = getattr(event, "total", 100) or 100
-            val = int((cur / tot) * 100) if tot > 0 else 0
-            self.progress_bar.setValue(val)
-            if msg:
-                self.lbl_step.setText(msg)
+            cur = getattr(event, "current", None)
+            tot = getattr(event, "total", None)
+            if tot is None or tot <= 0 or cur is None:
+                self.progress_bar.setRange(0, 0)
+                if msg:
+                    self.lbl_step.setText(msg)
+                self.lbl_status.setText("正在执行...")
+            else:
+                self.progress_bar.setRange(0, 100)
+                val = int((cur / tot) * 100)
+                self.progress_bar.setValue(val)
+                if msg:
+                    self.lbl_step.setText(msg)
                 self.lbl_status.setText(f"执行中 ({val}%)...")
 
         elif kind == "interaction":
@@ -680,6 +690,7 @@ class MainWindow(QMainWindow):
                 self._handle_interaction(task_id, req)
 
         elif kind == "completed":
+            self.progress_bar.setRange(0, 100)
             self.progress_bar.setValue(100)
             self.exec_panel.setVisible(False)
             self.btn_execute.setEnabled(True)
@@ -703,6 +714,7 @@ class MainWindow(QMainWindow):
                 self.result_view.setVisible(True)
 
         elif kind == "failed":
+            self.progress_bar.setRange(0, 100)
             self.lbl_status.setText("执行失败")
             self.exec_panel.setVisible(False)
             self.btn_execute.setEnabled(True)

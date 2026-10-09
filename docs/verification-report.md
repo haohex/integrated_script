@@ -1,12 +1,14 @@
 # 验证报告
 
-当前发布验收日期：2026-10-09。v3.0.1 已进入开发分支云端验收：Linux x64 GUI/TUI 和 Linux ARM64 TUI 已实际构建并通过离线运行；Windows 高缩放布局修复正在复核。PR 尚未合并，Release 尚未发布。下文 2026-10-08 的包与哈希为历史基线，不作为本次新版本的发布包。macOS 包已按用户要求排除。
+当前发布验收日期：2026-10-10。v3.0.1 已进入开发分支云端验收：Linux x64 GUI/TUI、Linux ARM64 TUI 和 Windows x64 TUI 已实际构建并通过离线运行；Windows 原生 100%–200% 应用缩放已通过。冻结 GUI 控制器及启动编码修复待新提交云端复验。PR 尚未合并，Release 尚未发布。下文 2026-10-08 的包与哈希为历史基线，不作为本次新版本的发布包。macOS 包已按用户要求排除。
 
 ## v3.0.1 发布门禁
 
-- 本地隔离锁定环境 Python 3.11.15、PySide6 6.8.3、Textual 8.2.8：结果滚动、参数恢复和日志弹窗适配修复后，`make check-all` 退出码 0，440 passed、7 skipped（12.06 秒）。flake8、black（141 文件）、isort、mypy（85 源文件）通过。7 项跳过仍来自缺失的既有 `.claude` 发布文档。
+- 本地隔离锁定环境 Python 3.11.15、PySide6 6.8.3、Textual 8.2.8：整合 GUI 控制器、未知总量进度和字面路径展示、Windows GUI 编码及测试环境恢复后，`make check-all` 退出码 0，464 passed、7 skipped（13.71 秒）。flake8、black（144 文件）、isort、mypy（85 源文件）通过；Windows 目标类型检查同样通过。7 项跳过仍来自缺失的既有 `.claude` 发布文档。
 - 新增小屏幕窗口框架完整包含、结果页日志访问和任务间日志隔离回归；完成/失败后隐藏进度面板，日志保留在结果页的“执行日志”选项卡并可复制。
 - 在 Xvfb 1024×696、应用缩放 200%（逻辑 client 512×348）实际执行空标签与 PNG→JPEG：结果区域 326×115，高于 260×80 最小提示；框架包含、执行按钮和关键裁剪检查通过。结果内容支持滚动，参数可展开恢复，日志弹窗按可用屏幕缩小。此项为 Linux xcb 证据，Windows 原生复验仍必须另跑。
+- Windows GUI 可分别缺失 stdout/stderr；每条可用标准流在日志初始化前配置 UTF-8，完全无标准流时保留文件日志。真实 cp1252 管道和无标准流入口回归通过；没有增加控制台窗口或吞掉编码异常。
+- 冻结 GUI 驱动区分 WindowSpecification 与 Wrapper，按 UIA 元素身份比较虚拟控件，关闭真实可见主窗口。仍严格要求两个 0 字节标签、有效截图和正常退出码 0；15 项控制器回归通过不能代替 Windows 实际运行。
 - 新 PTY 控制器在历史 Ubuntu 22.04 构建包上真实验证空标签、PNG→JPEG、1,001 张 PNG 压缩，全部核对文件格式/尺寸/数量，三次正常退出码 0。此次控制器演练运行在 WSL 主机，未宣称断网；历史容器证据另列于下方。
 - 原 GUI 冒烟脚本将截图/按键发送代替输出验证、将 SIGTERM -15 算作正常退出的结果已被拒绝。新脚本要求两个真实空标签、截图及界面关闭后的退出码 0，缺失输出或非交互环境必须失败。
 - 冻结版本读取改为包内元数据，避免读取安装目录上层源码仓库的版本号。增加回归测试。
@@ -15,7 +17,7 @@
 
 ## 开发分支实际云端证据
 
-开发分支提交 `6fadefe3543ac723215f4d1c2d93bfe914427fb4` 的 [构建与运行记录](https://github.com/haohex/integrated_script/actions/runs/37941161251) 和 [独立质量门禁](https://github.com/haohex/integrated_script/actions/runs/37941160814) 已完成。以下是该提交的实际结果；后续界面修复必须重新通过门禁，不能沿用旧提交结果放行。
+开发分支提交 `3d5baaa54a1586cbde09a93da6fa916dd32e8d19` 的 [构建与运行记录](https://github.com/haohex/integrated_script/actions/runs/37951271896) 和 [独立质量门禁](https://github.com/haohex/integrated_script/actions/runs/37951268889) 已完成。以下是该提交的实际结果；后续修复必须重新通过门禁，不能沿用旧提交结果放行。
 
 | 检查 | 实际结果 | 尚未验证范围 |
 | --- | --- | --- |
@@ -23,8 +25,9 @@
 | Ubuntu 22.04 x64 冻结 TUI | 归档重新解压后完成空标签、PNG→JPEG、1,001 张 PNG 压缩；全部核验实际输出并正常退出 0；子进程 PATH 无 Python，使用独立网络命名空间断网 | 代表操作，不是每项功能的大规模数据验收 |
 | Ubuntu 22.04 x64 冻结 GUI | 原生 X11 自动操作产生 2 个真实空标签，截图及输出核验通过，用户窗口关闭后退出 0；使用同样的断网和子进程 PATH 隔离 | Xvfb 自动桌面，不是物理桌面人工验收 |
 | Ubuntu 22.04 ARM64 冻结 TUI | 云端原生 ARM64 构建；三个操作及 1,001 个压缩输出通过；断网、子进程 PATH 无 Python、正常退出 0 | 未提供 ARM64 GUI |
-| Windows Server 2022 原生 GUI | 100% / 125% / 150% / 175% 的真实空标签和 PNG→JPEG 操作及布局检查通过；200% 窗口框架包含已通过，但结果区域仅 60 逻辑像素高，裁剪检查失败，正在补齐内容布局修复 | 应用 `QT_SCALE_FACTOR` 缩放，不能宣称物理 Windows 10/11 设备 DPI 验收 |
-| Windows 冻结 GUI/TUI | 原生布局门禁失败，构建及运行步骤未执行 | 尚无本次版本的 Windows 离线包运行证据 |
+| Windows Server 2022 原生 GUI | 100% / 125% / 150% / 175% / 200% 的真实空标签和 PNG→JPEG 操作及框架包含、关键布局检查全部通过；30 张真实截图复核，DPR 合成修正 | 应用 `QT_SCALE_FACTOR` 缩放，不能宣称物理 Windows 10/11 设备 DPI 验收 |
+| Windows 冻结 TUI | 原生构建、PE console 子系统、归档解压及 ConPTY 真实操作通过；空标签、PNG→JPEG、1,001 PNG 压缩全部输出核验并正常退出 0，程序出站防火墙阻断，子进程 PATH 无 Python | Server 2022 云端运行，不是物理 Win10/11 设备验证 |
+| Windows 冻结 GUI | 原生 windowed 构建、PE GUI 子系统、归档解压和无控制台窗口启动通过；旧驱动调用 Wrapper.exists 导致 0 标签，错误窗口关闭后被清理退出 1；stderr 同时发现 cp1252 启动日志错误 | 两项修复已实现，但新提交必须实际产出两个标签并正常退出才可放行 |
 | Ubuntu 24.04 冻结运行 | 因 Windows 矩阵失败，本轮下游验收跳过 | 必须补齐真实运行结果 |
 
 验收诊断和截图位于该运行的 `acceptance-linux-x64`、`acceptance-linux-arm64`、`acceptance-windows-x64` 制品；[PR #1](https://github.com/haohex/integrated_script/pull/1) 保持 draft。

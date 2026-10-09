@@ -21,7 +21,7 @@ Bounded Black-Box Verification Contract:
 4. Window screenshot & lifecycle termination:
    - Captures window bbox via Pillow ImageGrab (or ImageMagick import fallback) without Qt controller dependencies.
    - Linux: Sends X11 WM_PROTOCOLS / WM_DELETE_WINDOW ClientMessage via ctypes libX11 for clean QCloseEvent.
-   - Windows: Sends WM_CLOSE via PostMessageW.
+   - Windows: Sends WM_CLOSE via 64-bit PostMessageW or pywinauto window close.
    - Process wait returncode must strictly be 0.
    - Finally block cleans up spawned child process, flushes stdout/stderr to report, and exits non-zero on failure.
 """
@@ -42,6 +42,63 @@ from pathlib import Path
 from typing import Any
 
 
+def setup_win32_ctypes_signatures(user32: Any, kernel32: Any = None) -> None:
+    """Explicitly configure 64-bit ctypes argtypes and restype signatures for Win32 API."""
+    import ctypes
+    from ctypes import wintypes
+
+    if kernel32 is not None and hasattr(kernel32, "GetCurrentThreadId"):
+        kernel32.GetCurrentThreadId.argtypes = []
+        kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+    if hasattr(user32, "GetThreadDesktop"):
+        user32.GetThreadDesktop.argtypes = [wintypes.DWORD]
+        user32.GetThreadDesktop.restype = wintypes.HANDLE
+
+    if hasattr(user32, "GetSystemMetrics"):
+        user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+        user32.GetSystemMetrics.restype = ctypes.c_int
+
+    if hasattr(user32, "EnumWindows"):
+        wnd_proc_type = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
+        user32.EnumWindows.argtypes = [wnd_proc_type, wintypes.LPARAM]
+        user32.EnumWindows.restype = wintypes.BOOL
+
+    if hasattr(user32, "GetWindowThreadProcessId"):
+        user32.GetWindowThreadProcessId.argtypes = [
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+
+    if hasattr(user32, "GetWindowTextLengthW"):
+        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        user32.GetWindowTextLengthW.restype = ctypes.c_int
+
+    if hasattr(user32, "GetWindowTextW"):
+        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetWindowTextW.restype = ctypes.c_int
+
+    if hasattr(user32, "GetClassNameW"):
+        user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetClassNameW.restype = ctypes.c_int
+
+    if hasattr(user32, "IsWindowVisible"):
+        user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        user32.IsWindowVisible.restype = wintypes.BOOL
+
+    if hasattr(user32, "PostMessageW"):
+        user32.PostMessageW.argtypes = [
+            wintypes.HWND,
+            wintypes.UINT,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
+        user32.PostMessageW.restype = wintypes.BOOL
+
+
 def check_windows_interactive_desktop() -> tuple[bool, str]:
     """Check if Windows current thread runs in an interactive desktop station."""
     if sys.platform != "win32":
@@ -51,7 +108,10 @@ def check_windows_interactive_desktop() -> tuple[bool, str]:
         import ctypes
 
         user32 = ctypes.windll.user32
-        h_desk = user32.GetThreadDesktop(ctypes.windll.kernel32.GetCurrentThreadId())
+        kernel32 = ctypes.windll.kernel32
+        setup_win32_ctypes_signatures(user32, kernel32)
+
+        h_desk = user32.GetThreadDesktop(kernel32.GetCurrentThreadId())
         if not h_desk:
             return False, "Unable to acquire current thread desktop handle."
 
@@ -79,9 +139,12 @@ def enumerate_windows_for_pid(pid: int) -> list[dict[str, Any]]:
         from ctypes import wintypes
 
         user32 = ctypes.windll.user32
-        wnd_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        setup_win32_ctypes_signatures(user32)
+        wnd_proc = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)(
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
 
-        def enum_cb(hwnd: int, lparam: int) -> bool:
+        def enum_cb(hwnd: Any, lparam: Any) -> bool:
             w_pid = wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(w_pid))
             if w_pid.value == pid:
@@ -93,9 +156,14 @@ def enumerate_windows_for_pid(pid: int) -> list[dict[str, Any]]:
                 user32.GetClassNameW(hwnd, class_buff, 256)
 
                 is_visible = bool(user32.IsWindowVisible(hwnd))
+                hwnd_val = (
+                    int(hwnd)
+                    if isinstance(hwnd, int)
+                    else (hwnd.value if hasattr(hwnd, "value") else int(hwnd))
+                )
                 windows.append(
                     {
-                        "hwnd": int(hwnd),
+                        "hwnd": hwnd_val,
                         "title": buff.value,
                         "class_name": class_buff.value,
                         "visible": is_visible,
@@ -108,6 +176,236 @@ def enumerate_windows_for_pid(pid: int) -> list[dict[str, Any]]:
         print(f"[WARN] Failed to enumerate Windows for PID {pid}: {e}", file=sys.stderr)
 
     return windows
+
+
+def select_primary_windows(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Strictly select authentic visible main application windows, ignoring Qt helper/invisible windows."""
+    # 1. Visible windows with title containing '集成脚本工具'
+    title_matches = [
+        w for w in windows if w.get("visible") and "集成脚本工具" in w.get("title", "")
+    ]
+    if title_matches:
+        return title_matches
+
+    # 2. Visible non-console windows with Qt in class name or non-empty title
+    qt_matches = [
+        w
+        for w in windows
+        if w.get("visible")
+        and "ConsoleWindowClass" not in w.get("class_name", "")
+        and ("Qt" in w.get("class_name", "") or bool(w.get("title", "").strip()))
+    ]
+    if qt_matches:
+        return qt_matches
+
+    # 3. Any visible non-console window
+    visible_non_console = [
+        w
+        for w in windows
+        if w.get("visible") and "ConsoleWindowClass" not in w.get("class_name", "")
+    ]
+    if visible_non_console:
+        return visible_non_console
+
+    return windows
+
+
+def is_control_existing(elem: Any, timeout: float = 2.0) -> bool:
+    """Check if an element exists, accommodating both WindowSpecification and resolved Wrappers."""
+    if elem is None:
+        return False
+    if hasattr(elem, "exists"):
+        try:
+            return bool(elem.exists(timeout=timeout))
+        except Exception:
+            return False
+    # Resolved Wrapper has no 'exists()' method; its presence in descendants implies existence
+    return True
+
+
+def is_same_control(a: Any, b: Any) -> bool:
+    """Check if two pywinauto controls or specifications refer to the same element."""
+    if a is b:
+        return True
+    try:
+        a_info = getattr(a, "element_info", None)
+        b_info = getattr(b, "element_info", None)
+        if a_info is not None and b_info is not None:
+            # UIA 虚拟控件可能没有独立 HWND；CompareElements 才能判定元素身份。
+            return bool(a_info == b_info)
+    except Exception:
+        pass
+    try:
+        a_h = getattr(a, "handle", None)
+        b_h = getattr(b, "handle", None)
+        if a_h and b_h and a_h == b_h:
+            return True
+    except Exception:
+        pass
+    try:
+        return a == b
+    except Exception:
+        return False
+
+
+def set_control_text(elem: Any, text: str, prefer_type_keys: bool = False) -> bool:
+    """Set text on a control (WindowSpecification or Wrapper) safely across pywinauto types."""
+    if elem is None:
+        return False
+
+    methods = (
+        ["type_keys", "set_edit_text", "set_text"]
+        if prefer_type_keys
+        else ["set_edit_text", "set_text", "type_keys"]
+    )
+    for method_name in methods:
+        method = getattr(elem, method_name, None)
+        if callable(method):
+            try:
+                if method_name == "type_keys":
+                    method(text, with_spaces=True)
+                else:
+                    method(text)
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def click_control(elem: Any) -> bool:
+    """Click a button control (WindowSpecification or Wrapper)."""
+    if elem is None:
+        return False
+    for method_name in ["click", "click_input"]:
+        method = getattr(elem, method_name, None)
+        if callable(method):
+            try:
+                method()
+                return True
+            except Exception:
+                continue
+    return False
+
+
+def run_windows_automation(
+    app_ctrl: Any,
+    main_dlg: Any,
+    input_imgs: Path,
+    output_lbls: Path,
+) -> tuple[bool, str | None]:
+    """Execute label.create_empty automation workflow on Windows using pywinauto."""
+    try:
+        # 1. Search for operation
+        search_edit = main_dlg.child_window(auto_id="search_input")
+        if not is_control_existing(search_edit, timeout=2.0):
+            edits = main_dlg.descendants(control_type="Edit")
+            if edits:
+                search_edit = edits[0]
+        if is_control_existing(search_edit):
+            set_control_text(search_edit, "创建空标签", prefer_type_keys=True)
+            time.sleep(0.6)
+
+        # 2. Fill image input directory
+        img_edit = main_dlg.child_window(auto_id="images_dir", control_type="Edit")
+        if not is_control_existing(img_edit, timeout=2.0):
+            all_edits = [
+                e
+                for e in main_dlg.descendants(control_type="Edit")
+                if not is_same_control(e, search_edit)
+            ]
+            if len(all_edits) >= 1:
+                img_edit = all_edits[0]
+        if is_control_existing(img_edit):
+            set_control_text(img_edit, str(input_imgs), prefer_type_keys=False)
+            time.sleep(0.3)
+
+        # 3. Fill label output directory
+        lbl_edit = main_dlg.child_window(auto_id="labels_dir", control_type="Edit")
+        if not is_control_existing(lbl_edit, timeout=2.0):
+            all_edits = [
+                e
+                for e in main_dlg.descendants(control_type="Edit")
+                if not is_same_control(e, search_edit)
+            ]
+            if len(all_edits) >= 2:
+                lbl_edit = all_edits[1]
+        if is_control_existing(lbl_edit):
+            set_control_text(lbl_edit, str(output_lbls), prefer_type_keys=False)
+            time.sleep(0.3)
+
+        # 4. Trigger execution
+        exec_btn = main_dlg.child_window(title="开始执行", control_type="Button")
+        if not is_control_existing(exec_btn, timeout=2.0):
+            exec_btn = main_dlg.child_window(
+                auto_id="primary_button", control_type="Button"
+            )
+        if not is_control_existing(exec_btn, timeout=2.0):
+            buttons = [
+                b
+                for b in main_dlg.descendants(control_type="Button")
+                if "开始执行" in getattr(b, "window_text", lambda: "")()
+                or (
+                    getattr(b, "element_info", None)
+                    and "开始执行" in getattr(b.element_info, "name", "")
+                )
+            ]
+            if buttons:
+                exec_btn = buttons[0]
+
+        if is_control_existing(exec_btn, timeout=5.0):
+            if click_control(exec_btn):
+                time.sleep(3.0)
+                return True, None
+            return False, "Failed to click execution button"
+
+        return False, "Execution button not found"
+    except Exception as e:
+        return False, f"Windows pywinauto automation error: {e}"
+
+
+def close_windows_application(
+    proc: subprocess.Popen[Any] | None,
+    wins: list[dict[str, Any]],
+    main_dlg: Any = None,
+) -> None:
+    """Close the target Windows application gracefully using pywinauto and 64-bit PostMessageW WM_CLOSE."""
+    # 1. Try pywinauto main_dlg.close() first if available
+    if main_dlg is not None:
+        try:
+            if hasattr(main_dlg, "close"):
+                main_dlg.close()
+        except Exception:
+            pass
+
+    # 2. Select authentic visible main window(s) and send WM_CLOSE
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return
+
+        user32 = windll.user32
+        setup_win32_ctypes_signatures(user32)
+
+        candidate_wins = wins
+        if proc and proc.pid:
+            fresh_wins = []
+            for p in get_process_tree_pids(proc.pid):
+                fresh_wins.extend(enumerate_windows_for_pid(p))
+            if fresh_wins:
+                candidate_wins = fresh_wins
+
+        primary_wins = select_primary_windows(candidate_wins)
+        for w in primary_wins:
+            hwnd_val = w.get("hwnd")
+            if hwnd_val:
+                user32.PostMessageW(
+                    wintypes.HWND(hwnd_val), 0x0010, 0, 0
+                )  # 0x0010 = WM_CLOSE
+    except Exception as e:
+        print(f"[WARN] Failed to post WM_CLOSE message: {e}", file=sys.stderr)
 
 
 def get_process_tree_pids(root_pid: int) -> list[int]:
@@ -363,7 +661,7 @@ def main() -> int:
 
     # 1. SETUP ISOLATED SANDBOX DIRECTORY & FIXTURES
     sandbox_dir = Path(tempfile.mkdtemp(prefix="frozen_smoke_sandbox_"))
-    proc: subprocess.Popen | None = None
+    proc: subprocess.Popen[Any] | None = None
     stdout_text: str = ""
     stderr_text: str = ""
     exit_code: int = -1
@@ -514,6 +812,7 @@ def main() -> int:
         operation_error: str | None = None
         output_verified = False
         win_x, win_y, win_w, win_h = (0, 0, 1200, 780)
+        main_dlg: Any = None
 
         if gui_window_found:
             if sys.platform == "win32":
@@ -527,60 +826,14 @@ def main() -> int:
                     main_dlg.set_focus()
                     time.sleep(0.5)
 
-                    # 1. Search for operation
-                    search_edit = main_dlg.child_window(auto_id="search_input")
-                    if not search_edit.exists(timeout=2):
-                        edits = main_dlg.descendants(control_type="Edit")
-                        if edits:
-                            search_edit = edits[0]
-                    if search_edit.exists():
-                        search_edit.type_keys("创建空标签", with_spaces=True)
-                        time.sleep(0.6)
-
-                    # 2. Fill image input directory
-                    img_edit = main_dlg.child_window(
-                        auto_id="images_dir", control_type="Edit"
+                    operation_performed, operation_error = run_windows_automation(
+                        app_ctrl=app_ctrl,
+                        main_dlg=main_dlg,
+                        input_imgs=input_imgs,
+                        output_lbls=output_lbls,
                     )
-                    if not img_edit.exists(timeout=2):
-                        all_edits = [
-                            e
-                            for e in main_dlg.descendants(control_type="Edit")
-                            if e != search_edit
-                        ]
-                        if len(all_edits) >= 1:
-                            img_edit = all_edits[0]
-                    if img_edit.exists():
-                        img_edit.set_edit_text(str(input_imgs))
-                        time.sleep(0.3)
-
-                    # 3. Fill label output directory
-                    lbl_edit = main_dlg.child_window(
-                        auto_id="labels_dir", control_type="Edit"
-                    )
-                    if not lbl_edit.exists(timeout=2):
-                        all_edits = [
-                            e
-                            for e in main_dlg.descendants(control_type="Edit")
-                            if e != search_edit
-                        ]
-                        if len(all_edits) >= 2:
-                            lbl_edit = all_edits[1]
-                    if lbl_edit.exists():
-                        lbl_edit.set_edit_text(str(output_lbls))
-                        time.sleep(0.3)
-
-                    # 4. Trigger execution
-                    exec_btn = main_dlg.child_window(
-                        title="开始执行", control_type="Button"
-                    )
-                    if not exec_btn.exists(timeout=2):
-                        exec_btn = main_dlg.child_window(
-                            auto_id="primary_button", control_type="Button"
-                        )
-                    if exec_btn.exists(timeout=5):
-                        exec_btn.click()
-                        operation_performed = True
-                        time.sleep(3.0)
+                    if operation_error:
+                        print(f"[WARN] {operation_error}", file=sys.stderr)
                 except Exception as e:
                     operation_error = f"Windows pywinauto automation error: {e}"
                     print(f"[WARN] {operation_error}", file=sys.stderr)
@@ -658,7 +911,13 @@ def main() -> int:
                             ["xdotool", "key", "ctrl+a", "BackSpace"], check=False
                         )
                         subprocess.run(
-                            ["xdotool", "type", "--delay", "15", str(input_imgs)],
+                            [
+                                "xdotool",
+                                "type",
+                                "--delay",
+                                "15",
+                                str(input_imgs),
+                            ],
                             check=False,
                         )
                         time.sleep(0.3)
@@ -680,7 +939,13 @@ def main() -> int:
                             ["xdotool", "key", "ctrl+a", "BackSpace"], check=False
                         )
                         subprocess.run(
-                            ["xdotool", "type", "--delay", "15", str(output_lbls)],
+                            [
+                                "xdotool",
+                                "type",
+                                "--delay",
+                                "15",
+                                str(output_lbls),
+                            ],
                             check=False,
                         )
                         time.sleep(0.3)
@@ -773,14 +1038,7 @@ def main() -> int:
                         check=False,
                     )
             elif sys.platform == "win32":
-                try:
-                    import ctypes
-
-                    user32 = ctypes.windll.user32
-                    if wins:
-                        user32.PostMessageW(wins[0]["hwnd"], 0x0010, 0, 0)  # WM_CLOSE
-                except Exception:
-                    pass
+                close_windows_application(proc, wins, main_dlg=main_dlg)
 
             try:
                 proc.wait(timeout=8)

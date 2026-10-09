@@ -6,7 +6,7 @@
 > - **渲染后端**: 原生 X11/Xvfb 原生插件 (`QT_QPA_PLATFORM=xcb`) 与离线平台
 > - **操作目录基准**: 接入真实 `integrated_script.application.AppService` 全部 42 项生产操作目录，彻底移除一切虚构操作。
 > - **展示状态特别声明**: 运行中进度、执行结果（成功/失败）与二次危险操作确认弹窗等截图（`desktop-running-progress.png`、`desktop-result-success.png`、`desktop-result-failure.png`、`desktop-interaction-dialog.png`）均为**人工构建的界面展示状态**（用于精确校准与验证进度条、控制台日志、结构化表格、多层级树状展开、错误码横幅等交互控件外观），**并非 15,200 真实数据集样本实际批处理凭证**。
-> - **跨平台限制声明**: 本次视觉样式与交互测试全部在真实 Linux Xvfb 原生环境（`xcb`）下由 PySide6 实际光栅化生成并固化。**明确注记为 Linux 真实渲染产物，绝不冒充 Windows 系统截图**；Windows 本地窗口修饰、标题栏原生样式、Segoe UI 字体抗锯齿微调未在实机验证（待 Windows CI 运行补充真实截图证据），基准外观与配色遵循 Windows Fluent Slate / Blue-gray 规范。
+> - **跨平台限制声明**: 本次视觉样式与交互测试全部在真实 Linux Xvfb 原生环境（`xcb`）下由 PySide6 实际光栅化生成并固化。**明确注记为 Linux 真实渲染产物，绝不冒充 Windows 系统截图**；Windows 本地窗口修饰、标题栏原生样式、Segoe UI 字体抗锯齿微调未在实机验证（待 Windows CI 运行补充真实截图凭证），基准外观与配色遵循 Windows Fluent Slate / Blue-gray 规范。
 > - **SVG 离线显示声明**: TUI 终端截屏 SVG 文件中 Rich 默认附带的 `@font-face` 远程 CDN URL 已全部移除，统一回退为本地 monospace 离线字体渲染；生产代码与发布产物不读取这些 SVG 文件。
 
 ---
@@ -69,7 +69,7 @@
 ### 2.4 纯正后端合约与测试 Fake 隔离
 - **零生产 Fake**: 彻底删除 `ui/shared/fake_service.py`，生产代码严禁打包或导出假服务。缺失后端时明确抛出 `RuntimeError` 并快速失败。
 - **直接导入合约**: `ui/shared/contract.py` 直接导入 `integrated_script.application` 核心合约与 `AppService`。
-- **截图环境彻底沙箱化**: 验收与截图运行时对 `QT_QPA_PLATFORM`、`XDG_*`、`APPDATA`、`LOCALAPPDATA`、`HOME`、`USERPROFILE`、`PlatformDirs` 以及 `theme_override` 进行完整沙箱隔离与严格上下文恢复，成功与异常均保障所有窗口与服务完全关闭，绝不触碰真实 `$HOME` 用户配置。
+- **截图环境彻底沙箱化**: 验收与截图运行时对 `QT_QPA_PLATFORM`、`XDG_*`、`APPDATA`、`LOCALAPPDATA`、`HOME`、`USERPROFILE`、`PlatformDirs` 以及 `theme_override` 进行完整沙箱隔离与严格上下文恢复，成功与异常均保障所有窗口与服务完全关闭，绝不碰触真实 `$HOME` 用户配置。
 
 ---
 
@@ -88,7 +88,7 @@
 ## 4. 自动化测试与静态质量门禁
 
 所有前端拥有的测试用例与静态检查已 100% 通过：
-- **测试用例套件** (`pytest tests/ui`): 全部 50+ passed
+- **测试用例套件** (`pytest tests/ui`): 全部通过
   - `test_backend_requirement.py`: 验证 GUI 与 TUI 在缺少后端时抛出 RuntimeError。
   - `test_desktop_widgets.py`: 验证各类表单控件、Nullable 保持、0 与 False 区分、二次确认弹窗、表格与多级树格式化渲染、PathPicker InstantPopup 与菜单动作。
   - `test_desktop_window.py`: 验证导航树过滤、破坏性操作标识、执行事件轮询、紧凑模式切换、主题选项、整行连续选中 QSS 规则、键盘 Return/Enter 激活叶子项、以及任务 busy 状态下对当前操作表单的完整保护。
@@ -101,6 +101,13 @@
     1. ResultView 最小尺寸边界约束（`test_result_view_minimum_size_hint_bounded`，杜绝长路径将主窗口挤爆）
     2. 搜索框关键词实时自动联动选中匹配操作（`test_search_auto_selects_first_matching_operation`）
     3. 主操作执行按钮快捷键（`test_main_window_execute_button_has_shortcut`，保证 `Ctrl+Return` 可访问性）
+  - `test_frozen_gui_controller.py`:
+    1. WindowSpecification 与已解析 wrapper（EditWrapper/ButtonWrapper）的 API 差异及存在性检测兼容。
+    2. 真实可见主窗口精准选择，彻底剔除 Qt 隐藏辅助窗口与控制台宿主窗口。
+    3. 64 位 Win32 ctypes 签名安全性设置。
+    4. 控件文本写入与按钮点击 fallback 支持。
+    5. child_window 与 descendants fallback 两种自动化模式端到端模拟验证。
+    6. pywinauto close 与 64 位 PostMessageW WM_CLOSE 优雅关闭协议。
 
 ---
 
@@ -146,7 +153,8 @@ python tests/ui/frozen_gui_smoke.py --executable /path/to/extracted_gui_executab
    - 定位到 `label.create_empty`，在中文+空格路径下生成真实有效 PIL 图像，外部键盘/控件输入输入与输出路径，触发执行。
    - **严格产物验证**: 仅当预期的 2 个 `.txt` 标签文件均存在且大小严格为 0 字节时，方判定 `output_verified = True`。截图或按键发送绝不直接认作运行成功。
 4. **GUI 优雅关闭与退出码校验**:
-   - 兼容 Xvfb 无窗口管理器环境，通过 Alt+F4 / WM_CLOSE 协议关闭 GUI 窗口。
+   - 兼容 Xvfb 无窗口管理器环境与 Windows pywinauto/WM_CLOSE。
+   - 针对 Windows，精准筛选真实可见主窗口（排除 Qt 内部隐藏 helper 窗口），使用 64 位 Win32 ctypes 签名安全发送 `WM_CLOSE` 并调用 pywinauto 窗口关闭。
    - `proc.wait()` 返回码必须严格为 0。SIGTERM (-15) 坚决不认作 clean exit。超时、未交互、缺输出或截图失败均非 0 退出。
    - `finally` 块仅清理自身派生的 PID 与子进程树，杜绝遗留孤儿进程。
 5. **无头会话 (Session 0) 明确失败**: 在 Windows Runner 无交互桌面的受限场景下，明确输出检测诊断与原因（如 `Session 0 / Headless Virtual Screen`），直接以非 0 退出码失败，坚决不伪造虚假 Pass。
@@ -158,15 +166,15 @@ python tests/ui/frozen_gui_smoke.py --executable /path/to/extracted_gui_executab
 | 证据项 | 目标平台 / 环境 | 验证工具 / 脚本 | 当前状态 | 证据来源与详情 |
 | :--- | :--- | :--- | :--- | :--- |
 | **Linux 原生高 DPI 验收 (100%-200%)** | Linux (Ubuntu / WSL2 Xvfb xcb) | `tests/ui/native_acceptance.py` | **已完成 (Passed)** | 1.0, 1.25, 1.5, 1.75, 2.0 全部 5 组 scale 检验通过；明确标识为 QT_SCALE_FACTOR 应用缩放验证；完成中文空格路径空标签创建（0字节验证）与真实 PNG 转 JPEG（PIL.open 核验 JPEG 格式及 64x64/48x48 尺寸）；窗口与框架几何对照 screen.availableGeometry 严格 clamp（960x540），主要执行按钮完全可用，0 关键裁剪。 |
-| **Linux 冻结发布包冒烟验收** | Linux (Ubuntu ELF 二进制) |  | **待云端打包构建 (Pending Cloud Build)** | 旧 binary 缺少新键盘/搜索/窗口尺寸修复且依赖 WM Alt+F4，历史曾发生 -15 终止；已在黑盒驱动中升级为严格 PID 匹配、基于 client 实际 geometry 的相对坐标驱动，以及 X11 WM_PROTOCOLS / WM_DELETE_WINDOW 优雅退出协议。由于本地旧 dist 未包含新源码修复，明确撤回假 pass 声明；新冻结 GUI 严格等待 GitHub Actions Linux 原生重新 build 产物后由主代理执行黑盒验收，绝不伪报。 |
-| **Windows 原生高 DPI 样式证据 (100%-150% 审查 & 修复)** | GitHub Windows Server 2022 (windows 插件，非 Win10/11 物理高 DPI) |  | **已复核首批真实证据并完成布局修复** | 审查了云端 Windows 真实证据（100%、125%、150% 共 18 张真实带时间/水印截图与 JSON 报告）：100%/125% 真实业务闭环（空标签0字节、PIL验PNG转JPEG 64x64/48x48）通过，但 150% 因旧 MainWindow 硬编码下限 720x420（超出云端 1024x768@150% 逻辑可用屏幕 683x485）判定 fits=False 失败；且 100% 报告显示原生 DWM 边框下 frame 超过 available 边界。针对该真实证据，MainWindow 原始硬下限已降为 400x280 并支持动态 clamp 至 availableLogicalScreen（减去原生 frame_margin 与 taskbar），实现狭窄视口响应式折叠标题/动态收缩搜索框、自适应分配导航与内容区域宽度；同时在完成/失败事件触发时隐藏执行进度面板，将 ResultView 最小尺寸提示收敛至 260x80，并在 native_acceptance.py 中实现严格 frameGeometry 矩形包含校验（容忍 <= 2 逻辑像素原生不可见边框阴影）。本地 Xvfb 1024x768 原生 xcb 下 100%/150%/200% 验收全部真实通过（通过 summary_acceptance.json 验证），等待 CI 重新触发 Windows 完整 100%-200% 运行。 |
-| **Windows 冻结 exe 冒烟验收** | Windows (PyInstaller .exe) |  | **待云端打包构建 (Pending Cloud Build)** | pywinauto 自动化驱动已精确补全 images_dir 与 labels_dir 两条路径填写，严格断言 2 个 0 字节真实空标签、截图有效性及 exit_code=0（缺输出/未交互/截图失败均严格非 0 失败）。等待 GitHub Actions Windows Runner 原生构建产物后在真实交互桌面下运行，本机 Linux 环境不冒充 Windows 验证。 |
+| **Linux 冻结发布包冒烟验收** | Linux (Ubuntu ELF 二进制) | `tests/ui/frozen_gui_smoke.py` | **已完成 (Passed)** | 经此轮与前轮 GitHub Actions Linux strict 运行实际检验，基于真实提取的二进制文件（`extracted/integrated_script_gui`），在严格环境隔离与 xcb 插件下运行；通过 client 几何相对坐标精准交互完成 `label.create_empty`；严格核验生成 2 个 0 字节真实空标签、有效捕获窗口截图，并通过 X11 WM_PROTOCOLS / WM_DELETE_WINDOW 优雅退出，进程返回码严格为 0。 |
+| **Windows 原生高 DPI 样式证据 (100%-200% 五档完整)** | GitHub Windows Server 2022 (windows 插件，非 Win10/11 物理高 DPI) | `tests/ui/native_acceptance.py` | **已完成 (Passed)** | 真实 GitHub Actions run 37951271896 WindowsServer2022 job 113891028806 产物（5 Native 报告目录共 30 张高精度 PNG 截图与对应 JSON 报告）。100%、125%、150%、175%、200% 全 5 档测试全部 `all_passed=true`。真实业务闭环（空标签 0 字节校验、PIL 严格校验 PNG 转 JPEG 64x64/48x48）全部通过；DPR 合成已修正为完整物理像素分辨率（200% 对应 1024x752，不再发生 1/4 缩小）；小屏 availableGeometry clamp 验证通过，无控件溢出与关键截断。 |
+| **Windows 冻结 exe 冒烟验收** | Windows (PyInstaller .exe) | `tests/ui/frozen_gui_smoke.py` | **待重新云端验收 (Pending Cloud Re-run)** | 在真实 GitHub run 37951271896 中，frozen-gui 已验证正常启动、无控制台泄漏（`console_window_leaked=false`）、交互桌面可用（`interactive_desktop=true` 1024x768）；但因旧驱动逻辑中 `descendants` 返回 `EditWrapper` 缺乏 `exists()` 方法以及使用 `wins[0]` 辅助隐藏窗口发送 WM_CLOSE 导致 8 秒超时，执行失败（exit 1）。现已在 `tests/ui/frozen_gui_smoke.py` 中彻底修复控件存在性兼容（`is_control_existing` / `set_control_text`）、主窗口选择（`select_primary_windows`）及 64 位 Win32 ctypes 签名安全关闭协议。等待主代理 git push 后由 GitHub Actions Windows Runner 重新跑真正 Windows frozen GUI，本地 Linux 模拟通过绝不冒充 Windows 成功。 |
 
 > **注**: 远端 Windows CI 跑完并上传制品后，主代理将通知前端代理对真实 Windows 截图与 DPI 报告进行正式 Review。
 
 ---
 
-## 8. CI 验收环境所需系统依赖清单 (供 Pi 配置使用)
+## 8. CI 验收环境所需系统依赖清单 (供 CI 配置使用)
 
 为了在 CI 环境中顺利执行上述 2 个验收脚本，需要以下系统级与开发依赖：
 

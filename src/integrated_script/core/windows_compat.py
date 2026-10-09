@@ -75,32 +75,24 @@ def setup_console_encoding() -> bool:
         return True
 
     try:
-        # 设置标准输入输出编码
-        if hasattr(sys.stdout, "reconfigure") and hasattr(sys.stderr, "reconfigure"):
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-            return True
-        else:
-            # Python 3.6及以下版本的兼容性处理
-            import io
+        # Windowed GUI 的 stdout / stderr 可以分别缺失，不能由一条流阻止另一条初始化。
+        for name in ("stdout", "stderr"):
+            stream = getattr(sys, name)
+            if stream is None:
+                continue
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            elif hasattr(stream, "buffer"):
+                import io
 
-            # 重新包装标准输出
-            if (
-                not isinstance(sys.stdout, io.TextIOWrapper)
-                or sys.stdout.encoding.lower() != "utf-8"
-            ):
-                sys.stdout = io.TextIOWrapper(
-                    sys.stdout.buffer, encoding="utf-8", errors="replace", newline="\n"
+                setattr(
+                    sys,
+                    name,
+                    io.TextIOWrapper(
+                        stream.buffer, encoding="utf-8", errors="replace", newline="\n"
+                    ),
                 )
-
-            if (
-                not isinstance(sys.stderr, io.TextIOWrapper)
-                or sys.stderr.encoding.lower() != "utf-8"
-            ):
-                sys.stderr = io.TextIOWrapper(
-                    sys.stderr.buffer, encoding="utf-8", errors="replace", newline="\n"
-                )
-            return True
+        return True
 
     except Exception:
         return False
