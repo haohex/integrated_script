@@ -809,7 +809,7 @@ def test_package_script_preserves_app_symlinks(tmp_path: Path) -> None:
         assert stat.S_IMODE(real_file.external_attr >> 16) == stat.S_IMODE(
             executable.stat().st_mode
         )
-        assert archive.read(real_file.filename) == b"#!/bin/sh\n"
+        assert archive.read(real_file.filename) == executable.read_bytes()
 
         assert prefix + "Resources/empty/" in infos
 
