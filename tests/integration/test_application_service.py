@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Callable, Dict, List, Sequence, Tuple
@@ -21,7 +22,7 @@ from integrated_script.contracts.results import OperationResult
 
 @pytest.fixture
 def xdg_env(monkeypatch, tmp_path: Path):
-    """把用户目录指向临时目录，避免污染真实环境。"""
+    """通过本机目录机制隔离每个用例，不把 XDG 当作 Windows API。"""
     for var, sub in (
         ("XDG_CONFIG_HOME", "config"),
         ("XDG_STATE_HOME", "state"),
@@ -29,6 +30,16 @@ def xdg_env(monkeypatch, tmp_path: Path):
         ("XDG_DATA_HOME", "data"),
     ):
         monkeypatch.setenv(var, str(tmp_path / var.lower()))
+    if sys.platform == "win32":
+        import platformdirs.windows
+
+        # Known-folder resolution can cache the process user profile. Keep the
+        # native platformdirs layout but provide separate OS folders per test.
+        monkeypatch.setattr(
+            platformdirs.windows,
+            "get_win_folder",
+            lambda folder: str(tmp_path / "native_user" / folder.lower()),
+        )
     return tmp_path
 
 
@@ -610,8 +621,10 @@ def test_default_service_injects_user_runtime_paths(xdg_env, tmp_path: Path) -> 
         log_dir = str(service._config.get("paths.log_dir"))
         assert Path(temp_dir).is_absolute()
         assert Path(log_dir).is_absolute()
-        assert str(tmp_path / "xdg_cache_home") in temp_dir
-        assert str(tmp_path / "xdg_state_home") in log_dir
+        assert Path(temp_dir) == service.app_paths.cache_dir / "temp"
+        assert Path(log_dir) == service.app_paths.log_dir
+        assert service.app_paths.cache_dir.is_relative_to(tmp_path)
+        assert service.app_paths.log_dir.is_relative_to(tmp_path)
     finally:
         service.close()
 

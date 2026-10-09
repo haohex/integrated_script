@@ -804,7 +804,11 @@ def test_package_script_preserves_app_symlinks(tmp_path: Path) -> None:
         )
 
         real_file = infos[prefix + "MacOS/integrated_script_gui"]
-        assert stat.S_IMODE(real_file.external_attr >> 16) == 0o755
+        # Windows chmod cannot add Unix execute bits; archive the source mode
+        # actually provided by the host filesystem, including 0755 on POSIX.
+        assert stat.S_IMODE(real_file.external_attr >> 16) == stat.S_IMODE(
+            executable.stat().st_mode
+        )
         assert archive.read(real_file.filename) == b"#!/bin/sh\n"
 
         assert prefix + "Resources/empty/" in infos
