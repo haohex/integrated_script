@@ -194,3 +194,112 @@ def test_main_window_busy_state_protects_active_operation(qapp, fake_service):
 
     fake_service._busy = False
     win.close()
+
+
+def test_main_window_execution_logs_lifecycle_and_isolation(qapp, fake_service):
+    """Verify execution logs lifecycle: accessible in ResultView, isolated across runs, switching on failure."""
+    from integrated_script.contracts.results import OperationResult
+    from integrated_script.ui.shared.contract import TaskEvent
+
+    win = MainWindow(service=fake_service)
+    win.show()
+    qapp.processEvents()
+
+    win._select_operation_by_id("yolo.validate_detection")
+    win.current_form.widgets["dataset_path"].line_edit.setText("/tmp/test_dataset")
+
+    # 1. Run 1: Emit logs and complete
+    task_id_1 = "task_001"
+    win.active_task_id = task_id_1
+    win.exec_panel.setVisible(True)
+    win.result_view.setVisible(False)
+    win.log_edit.clear()
+    win.result_view.clear_logs()
+
+    win._handle_event(
+        TaskEvent(
+            task_id=task_id_1, kind="log", message="[Run 1] Initializing pipeline..."
+        )
+    )
+    win._handle_event(
+        TaskEvent(
+            task_id=task_id_1, kind="log", message="[Run 1] Processing batch 1..."
+        )
+    )
+    res_1 = OperationResult(success=True, message="Run 1 完成", payload={"count": 10})
+    win._handle_event(TaskEvent(task_id=task_id_1, kind="completed", result=res_1))
+    qapp.processEvents()
+
+    assert not win.exec_panel.isVisible()
+    assert win.result_view.isVisible()
+    assert "[Run 1] Initializing pipeline..." in win.result_view.get_logs()
+    assert "[Run 1] Processing batch 1..." in win.result_view.get_logs()
+    assert win.result_view.btn_view_logs.isVisible()
+
+    # Click banner view logs button to switch to log tab
+    win.result_view.btn_view_logs.click()
+    assert win.result_view.tabs.currentWidget() == win.result_view.log_container
+
+    # 2. Run 2 (Rerun): Ensure logs do NOT leak from Run 1
+    task_id_2 = "task_002"
+    win.active_task_id = task_id_2
+    # Simulate user clicking execute again
+    win.exec_panel.setVisible(True)
+    win.result_view.setVisible(False)
+    win.log_edit.clear()
+    win.result_view.clear_logs()
+
+    assert win.result_view.get_logs() == ""
+    assert win.log_edit.toPlainText() == ""
+
+    win._handle_event(
+        TaskEvent(
+            task_id=task_id_2, kind="log", message="[Run 2] Brand new task execution..."
+        )
+    )
+    res_2 = OperationResult(success=True, message="Run 2 完成", payload={"count": 20})
+    win._handle_event(TaskEvent(task_id=task_id_2, kind="completed", result=res_2))
+    qapp.processEvents()
+
+    assert not win.exec_panel.isVisible()
+    assert win.result_view.isVisible()
+    assert "[Run 2] Brand new task execution..." in win.result_view.get_logs()
+    assert "Run 1" not in win.result_view.get_logs()
+
+    # 3. Run 3: Failure state automatically focuses execution log tab
+    task_id_3 = "task_003"
+    win.active_task_id = task_id_3
+    win.exec_panel.setVisible(True)
+    win.result_view.setVisible(False)
+    win.log_edit.clear()
+    win.result_view.clear_logs()
+
+    win._handle_event(
+        TaskEvent(
+            task_id=task_id_3,
+            kind="log",
+            message="[Run 3] Syntax error in file line 42",
+        )
+    )
+    res_3 = OperationResult(
+        success=False, message="Run 3 失败", error_code="SYNTAX_ERROR"
+    )
+    win._handle_event(TaskEvent(task_id=task_id_3, kind="failed", result=res_3))
+    qapp.processEvents()
+
+    assert win.lbl_status.text() == "执行失败"
+    assert not win.exec_panel.isVisible()
+    assert win.result_view.isVisible()
+    # On failure, ResultView must automatically switch to execution logs tab
+    assert win.result_view.tabs.currentWidget() == win.result_view.log_container
+    assert "[Run 3] Syntax error in file line 42" in win.result_view.get_logs()
+    assert "Run 2" not in win.result_view.get_logs()
+
+    # 4. Switch operation clears all execution and result views
+    win._select_operation_by_id("yolo.clean_unmatched")
+    assert not win.exec_panel.isVisible()
+    assert not win.result_view.isVisible()
+    assert win.result_view.get_logs() == ""
+    assert win.log_edit.toPlainText() == ""
+
+    win.close()

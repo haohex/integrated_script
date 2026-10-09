@@ -416,9 +416,35 @@ def run_single_scale_worker(scale: float, output_dir: Path) -> dict[str, Any]:
             "result_view": check_widget_clipping("result_view", win.result_view),
         }
 
-        # Screen Containment Verification: Window should not exceed available screen bounds
-        fits_width = win_geo.width() <= avail_geo.width()
-        fits_height = win_geo.height() <= avail_geo.height()
+        # Screen Containment Verification: Window frame should strictly reside within available screen bounds
+        # Allow up to 2 logical pixels tolerance for native OS invisible resize borders / drop shadow margins.
+        containment_tolerance = 2
+        frame_within_left = frame_geo.left() >= (
+            avail_geo.left() - containment_tolerance
+        )
+        frame_within_top = frame_geo.top() >= (avail_geo.top() - containment_tolerance)
+        frame_within_right = frame_geo.right() <= (
+            avail_geo.right() + containment_tolerance
+        )
+        frame_within_bottom = frame_geo.bottom() <= (
+            avail_geo.bottom() + containment_tolerance
+        )
+        frame_fits_width = frame_geo.width() <= (
+            avail_geo.width() + 2 * containment_tolerance
+        )
+        frame_fits_height = frame_geo.height() <= (
+            avail_geo.height() + 2 * containment_tolerance
+        )
+
+        fits_available_screen = (
+            frame_within_left
+            and frame_within_top
+            and frame_within_right
+            and frame_within_bottom
+            and frame_fits_width
+            and frame_fits_height
+        )
+
         btn_exec_usable = win.btn_execute.isVisible() and win.btn_execute.isEnabled()
         form_scroll_usable = win.form_scroll.isVisible()
 
@@ -447,14 +473,23 @@ def run_single_scale_worker(scale: float, output_dir: Path) -> dict[str, Any]:
                 "width": frame_geo.width(),
                 "height": frame_geo.height(),
             },
-            "fits_available_screen": fits_width and fits_height,
+            "containment_tolerance_px": containment_tolerance,
+            "containment_checks": {
+                "within_left": frame_within_left,
+                "within_top": frame_within_top,
+                "within_right": frame_within_right,
+                "within_bottom": frame_within_bottom,
+                "fits_width": frame_fits_width,
+                "fits_height": frame_fits_height,
+            },
+            "fits_available_screen": fits_available_screen,
             "primary_action_usable": btn_exec_usable,
             "form_scroll_usable": form_scroll_usable,
         }
 
         any_severe_clip = any(c.get("clipped", False) for c in clipping_report.values())
         overall_passed = (
-            (not any_severe_clip) and fits_width and fits_height and btn_exec_usable
+            (not any_severe_clip) and fits_available_screen and btn_exec_usable
         )
 
         report: dict[str, Any] = {

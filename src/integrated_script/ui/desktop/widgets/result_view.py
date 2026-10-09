@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Result view widget rendering complete OperationResult and nested payloads."""
+"""Result view widget rendering complete OperationResult, logs, and nested payloads."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -41,8 +42,52 @@ from integrated_script.ui.shared.theme import (
 )
 
 
+class LogViewerDialog(QDialog):
+    """Standalone dialog for viewing and copying full execution logs."""
+
+    def __init__(self, logs: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("执行日志详情")
+        self.resize(680, 440)
+        self.setMinimumSize(320, 200)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        toolbar = QHBoxLayout()
+        lbl_hint = QLabel("任务完整执行日志输出：", self)
+        toolbar.addWidget(lbl_hint)
+        toolbar.addStretch()
+
+        self.btn_copy = QPushButton("复制日志", self)
+        self.btn_copy.setIcon(get_icon("copy"))
+        self.btn_copy.clicked.connect(self._copy_to_clipboard)
+        toolbar.addWidget(self.btn_copy)
+
+        layout.addLayout(toolbar)
+
+        self.log_view = QPlainTextEdit(self)
+        self.log_view.setReadOnly(True)
+        self.log_view.setStyleSheet("font-family: monospace; font-size: 12px;")
+        self.log_view.setPlainText(logs)
+        layout.addWidget(self.log_view, 1)
+
+        btn_box = QHBoxLayout()
+        btn_box.addStretch()
+        btn_close = QPushButton("关闭", self)
+        btn_close.clicked.connect(self.accept)
+        btn_box.addWidget(btn_close)
+        layout.addLayout(btn_box)
+
+    def _copy_to_clipboard(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(self.log_view.toPlainText())
+
+
 class ResultView(QWidget):
-    """Renders operation outcome, status banners, tables, and nested payload hierarchies."""
+    """Renders operation outcome, status banners, tables, execution logs, and nested payloads."""
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -71,6 +116,12 @@ class ResultView(QWidget):
         self.error_code_badge.setVisible(False)
         self.banner_layout.addWidget(self.error_code_badge)
 
+        self.btn_view_logs = QPushButton("查看日志", self.banner)
+        self.btn_view_logs.setIcon(get_icon("terminal"))
+        self.btn_view_logs.setToolTip("查看本次任务的完整执行日志")
+        self.btn_view_logs.clicked.connect(self._focus_log_tab)
+        self.banner_layout.addWidget(self.btn_view_logs)
+
         self.main_layout.addWidget(self.banner)
 
         # 2. Key Metrics Summary Cards Grid
@@ -80,7 +131,7 @@ class ResultView(QWidget):
         self.summary_grid.setSpacing(8)
         self.main_layout.addWidget(self.summary_container)
 
-        # 3. Tab Widget for Tables, Tree, and Raw JSON
+        # 3. Tab Widget for Tables, Tree, Raw JSON, and Execution Logs
         self.tabs = QTabWidget(self)
 
         # Tab: Data Tables
@@ -127,17 +178,47 @@ class ResultView(QWidget):
         json_layout.addWidget(self.json_view)
 
         self.tabs.addTab(self.json_container, "原始 JSON")
+
+        # Tab: Execution Logs with Copy and Popout Dialog
+        self.log_container = QWidget(self.tabs)
+        log_layout = QVBoxLayout(self.log_container)
+        log_layout.setContentsMargins(8, 8, 8, 8)
+        log_toolbar = QHBoxLayout()
+        log_toolbar.addStretch()
+
+        self.btn_copy_log = QPushButton("复制日志", self.log_container)
+        self.btn_copy_log.setIcon(get_icon("copy"))
+        self.btn_copy_log.clicked.connect(self._copy_log_to_clipboard)
+        log_toolbar.addWidget(self.btn_copy_log)
+
+        self.btn_popout_log = QPushButton("弹窗查看", self.log_container)
+        self.btn_popout_log.setIcon(get_icon("terminal"))
+        self.btn_popout_log.clicked.connect(self._open_log_dialog)
+        log_toolbar.addWidget(self.btn_popout_log)
+
+        log_layout.addLayout(log_toolbar)
+
+        self.log_view = QPlainTextEdit(self.log_container)
+        self.log_view.setReadOnly(True)
+        self.log_view.setStyleSheet("font-family: monospace; font-size: 12px;")
+        log_layout.addWidget(self.log_view)
+
+        self.tabs.addTab(self.log_container, "执行日志")
+
         self.main_layout.addWidget(self.tabs, 1)
 
     def minimumSizeHint(self) -> QSize:
         """Return constrained responsive minimum size hint to prevent dialog/parent clipping."""
-        return QSize(280, 100)
+        return QSize(260, 80)
 
     def update_theme(self, theme_name: str | None = None) -> None:
         """Update banner colors and icons according to theme without modifying payload or tab state."""
         eff_theme = theme_name or resolve_effective_theme(load_theme_preference())
         palette = get_palette(eff_theme)
         self.btn_copy_json.setIcon(get_icon("copy", theme_name=eff_theme))
+        self.btn_copy_log.setIcon(get_icon("copy", theme_name=eff_theme))
+        self.btn_popout_log.setIcon(get_icon("terminal", theme_name=eff_theme))
+        self.btn_view_logs.setIcon(get_icon("terminal", theme_name=eff_theme))
 
         if self._last_result is not None:
             if self._last_result.success:
@@ -169,8 +250,36 @@ class ResultView(QWidget):
                     f"color: {danger_fg}; font-size: 14px; font-weight: 600;"
                 )
 
-    def set_result(self, result: OperationResult | dict[str, Any]) -> None:
-        """Populate result view with OperationResult content."""
+    def set_logs(self, logs: str | None) -> None:
+        """Set execution logs displayed in ResultView."""
+        self.log_view.setPlainText(logs or "")
+
+    def clear_logs(self) -> None:
+        """Clear execution logs in ResultView."""
+        self.log_view.clear()
+
+    def get_logs(self) -> str:
+        """Get currently stored execution logs."""
+        return self.log_view.toPlainText()
+
+    def _focus_log_tab(self) -> None:
+        """Switch active tab to execution logs."""
+        self.tabs.setCurrentWidget(self.log_container)
+
+    def _open_log_dialog(self) -> None:
+        """Open standalone log viewer dialog."""
+        dlg = LogViewerDialog(self.log_view.toPlainText(), parent=self)
+        dlg.exec()
+
+    def set_result(
+        self,
+        result: OperationResult | dict[str, Any],
+        logs: str | None = None,
+    ) -> None:
+        """Populate result view with OperationResult content and optional execution logs."""
+        if logs is not None:
+            self.set_logs(logs)
+
         if isinstance(result, dict):
             raw_payload = result.get("payload")
             payload = raw_payload if isinstance(raw_payload, dict) else result
@@ -267,9 +376,19 @@ class ResultView(QWidget):
         # Raw JSON view
         self.json_view.setPlainText(format_payload_json(self.current_payload))
 
-    def show_result(self, result: OperationResult | dict[str, Any]) -> None:
+        # Select appropriate initial tab
+        if not op_result.success:
+            self.tabs.setCurrentWidget(self.log_container)
+        elif tables:
+            self.tabs.setCurrentIndex(0)
+
+    def show_result(
+        self,
+        result: OperationResult | dict[str, Any],
+        logs: str | None = None,
+    ) -> None:
         """Alias for set_result."""
-        self.set_result(result)
+        self.set_result(result, logs=logs)
 
     def _populate_tree_widget(
         self, node: TreeNode, parent_item: QTreeWidget | QTreeWidgetItem
@@ -286,3 +405,8 @@ class ResultView(QWidget):
         clipboard = QApplication.clipboard()
         if clipboard:
             clipboard.setText(self.json_view.toPlainText())
+
+    def _copy_log_to_clipboard(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(self.log_view.toPlainText())

@@ -254,3 +254,59 @@ def test_interaction_dialog_confirm(qapp):
 
     dlg._on_cancel()
     assert dlg.response_data == {"confirmed": False}
+
+
+def test_result_view_execution_logs_and_dialog(qapp):
+    from integrated_script.ui.desktop.widgets.result_view import LogViewerDialog
+
+    rv = ResultView()
+    rv.show()
+
+    # Initial state: tabs count is 4, tab 3 is execution logs
+    assert rv.tabs.count() == 4
+    assert rv.tabs.tabText(3) == "执行日志"
+    assert rv.btn_view_logs.isVisible()
+
+    # Set logs and test retrieval
+    test_logs = (
+        "2026-10-09 12:00:00 [INFO] 步骤 1 开始\n2026-10-09 12:00:01 [INFO] 步骤 1 完成"
+    )
+    rv.set_logs(test_logs)
+    assert rv.get_logs() == test_logs
+    assert rv.log_view.toPlainText() == test_logs
+
+    # Click banner view logs button -> switches to log tab
+    rv.tabs.setCurrentIndex(0)
+    assert rv.tabs.currentIndex() == 0
+    rv.btn_view_logs.click()
+    assert rv.tabs.currentWidget() == rv.log_container
+
+    # Copy log action
+    rv._copy_log_to_clipboard()
+    cb = QApplication.clipboard()
+    if cb:
+        assert cb.text() == test_logs
+
+    # Failure automatically switches to log container
+    res_fail = OperationResult(
+        success=False,
+        message="校验失败",
+        error_code="VALIDATION_ERROR",
+        payload={"reason": "bad format"},
+    )
+    rv.set_result(res_fail, logs=test_logs)
+    assert rv.tabs.currentWidget() == rv.log_container
+
+    # Standalone LogViewerDialog
+    dlg = LogViewerDialog(test_logs, parent=rv)
+    assert dlg.log_view.toPlainText() == test_logs
+    dlg._copy_to_clipboard()
+    if cb:
+        assert cb.text() == test_logs
+    dlg.close()
+
+    # Clear logs
+    rv.clear_logs()
+    assert rv.get_logs() == ""
+    assert rv.log_view.toPlainText() == ""
+    rv.close()

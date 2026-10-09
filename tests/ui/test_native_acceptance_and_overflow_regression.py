@@ -179,3 +179,104 @@ def test_nav_tree_enter_key_selection_and_busy_protection(qapp):
             win.close()
         finally:
             srv.close()
+
+
+def test_main_window_screen_adaptation_simulated_scales(qapp):
+    """Regression test: verify MainWindow adapts to simulated 1024x768 screens at 100/125/150/175/200% scaling.
+
+    Tests startup, compact mode, and result view states under clamped available geometry.
+    Ensures primary action button is usable, forms/results scrollable, and window frame fits within screen.
+    """
+    from PySide6.QtCore import QRect
+
+    from integrated_script.contracts.results import OperationResult
+
+    # (scale, avail_width, avail_height)
+    simulated_screens = [
+        (1.0, 1024, 728),
+        (1.25, 819, 582),
+        (1.5, 683, 485),
+        (1.75, 585, 416),
+        (2.0, 512, 364),
+    ]
+
+    with tempfile.TemporaryDirectory() as td:
+        cfg = ConfigManager(config_file=Path(td) / "c.json", auto_save=False)
+        srv = AppService(cfg, working_directory=Path(td))
+        try:
+            win = MainWindow(service=srv)
+            win.show()
+            qapp.processEvents()
+
+            tolerance = 2
+            for scale, aw, ah in simulated_screens:
+                avail_rect = QRect(0, 0, aw, ah)
+
+                # State 1: Startup (Initial operation loaded)
+                win._toggle_compact(False)
+                win._clamp_to_screen(1200, 780, avail_override=avail_rect)
+                qapp.processEvents()
+
+                frame = win.frameGeometry()
+                assert frame.left() >= avail_rect.left() - tolerance
+                assert frame.top() >= avail_rect.top() - tolerance
+                assert frame.right() <= avail_rect.right() + tolerance
+                assert frame.bottom() <= avail_rect.bottom() + tolerance
+                assert frame.width() <= avail_rect.width() + 2 * tolerance
+                assert frame.height() <= avail_rect.height() + 2 * tolerance
+
+                assert win.btn_execute.isVisible() and win.btn_execute.isEnabled()
+                assert win.form_scroll.isVisible()
+                assert win.nav_tree.isVisible()
+
+                # State 2: Compact mode
+                win._toggle_compact(True)
+                win._clamp_to_screen(980, 600, avail_override=avail_rect)
+                qapp.processEvents()
+
+                frame_compact = win.frameGeometry()
+                assert frame_compact.left() >= avail_rect.left() - tolerance
+                assert frame_compact.top() >= avail_rect.top() - tolerance
+                assert frame_compact.right() <= avail_rect.right() + tolerance
+                assert frame_compact.bottom() <= avail_rect.bottom() + tolerance
+                assert win.btn_execute.isVisible() and win.btn_execute.isEnabled()
+                assert win.form_scroll.isVisible()
+
+                # State 3: Result state (ResultView populated and displayed)
+                mock_result = OperationResult(
+                    success=True,
+                    message="模拟完成",
+                    payload={"processed_count": 10, "details": "测试"},
+                )
+                win.result_view.show_result(mock_result)
+                win.result_view.setVisible(True)
+                win.exec_panel.setVisible(False)
+                win._clamp_to_screen(1200, 780, avail_override=avail_rect)
+                qapp.processEvents()
+
+                frame_result = win.frameGeometry()
+                assert frame_result.left() >= avail_rect.left() - tolerance
+                assert frame_result.top() >= avail_rect.top() - tolerance
+                assert frame_result.right() <= avail_rect.right() + tolerance
+                assert frame_result.bottom() <= avail_rect.bottom() + tolerance
+                assert win.result_view.isVisible()
+                assert win.result_view.btn_view_logs.isVisible()
+                assert win.result_view.tabs.count() == 4
+                assert win.result_view.tabs.tabText(3) == "执行日志"
+                assert win.btn_execute.isVisible() and win.btn_execute.isEnabled()
+
+                # Verify log tab focus in bounded screen does not clip or overflow
+                win.result_view.btn_view_logs.click()
+                qapp.processEvents()
+                assert (
+                    win.result_view.tabs.currentWidget()
+                    == win.result_view.log_container
+                )
+                assert win.btn_execute.isVisible() and win.btn_execute.isEnabled()
+
+                # Reset result view visibility for next iteration
+                win.result_view.setVisible(False)
+
+            win.close()
+        finally:
+            srv.close()

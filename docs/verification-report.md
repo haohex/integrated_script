@@ -1,15 +1,32 @@
 # 验证报告
 
-当前发布验收日期：2026-10-09。v3.0.1 本地完整门禁已通过；Linux/Windows 云端构建和运行验收待执行。下文 2026-10-08 的包与哈希为历史基线，不作为本次新版本的发布包。macOS 包已按用户要求排除。
+当前发布验收日期：2026-10-09。v3.0.1 已进入开发分支云端验收：Linux x64 GUI/TUI 和 Linux ARM64 TUI 已实际构建并通过离线运行；Windows 高缩放布局修复正在复核。PR 尚未合并，Release 尚未发布。下文 2026-10-08 的包与哈希为历史基线，不作为本次新版本的发布包。macOS 包已按用户要求排除。
 
 ## v3.0.1 发布门禁
 
-- 本地隔离锁定环境 Python 3.11.15、PySide6 6.8.3、Textual 8.2.8：`make check-all` 退出码 0，435 passed、7 skipped（13.41 秒）。flake8、black（141 文件）、isort、mypy（85 源文件）通过。7 项跳过仍来自缺失的既有 `.claude` 发布文档。
+- 本地隔离锁定环境 Python 3.11.15、PySide6 6.8.3、Textual 8.2.8：Windows 高缩放布局和日志入口修复后，`make check-all` 退出码 0，438 passed、7 skipped（13.66 秒）。flake8、black（141 文件）、isort、mypy（85 源文件）通过。7 项跳过仍来自缺失的既有 `.claude` 发布文档。
+- 新增小屏幕窗口框架完整包含、结果页日志访问和任务间日志隔离回归；完成/失败后隐藏进度面板，日志保留在结果页的“执行日志”选项卡并可复制。
 - 新 PTY 控制器在历史 Ubuntu 22.04 构建包上真实验证空标签、PNG→JPEG、1,001 张 PNG 压缩，全部核对文件格式/尺寸/数量，三次正常退出码 0。此次控制器演练运行在 WSL 主机，未宣称断网；历史容器证据另列于下方。
 - 原 GUI 冒烟脚本将截图/按键发送代替输出验证、将 SIGTERM -15 算作正常退出的结果已被拒绝。新脚本要求两个真实空标签、截图及界面关闭后的退出码 0，缺失输出或非交互环境必须失败。
 - 冻结版本读取改为包内元数据，避免读取安装目录上层源码仓库的版本号。增加回归测试。
 - Antigravity 负责界面、键盘/缩放修复与严格 GUI 验收；Pi 已完成共享后端。Pi 本阶段上游服务连续返回 400 后，主代理接管 CI、归档验证及 TUI 控制器。
 - 用户已授权开发分支推送、通过云端门禁后的 PR 合并及 v3.0.1 自动发布。云端原生运行结果与发布下载链接将在完成后补录；配置工作流不等于运行成功。
+
+## 开发分支实际云端证据
+
+开发分支提交 `32a34bc042d5b7220032746d23ee46bec039cf30` 的 [构建与运行记录](https://github.com/haohex/integrated_script/actions/runs/37931604487) 和 [独立质量门禁](https://github.com/haohex/integrated_script/actions/runs/37931604084) 已完成。以下是该提交的实际结果；后续界面修复必须重新通过门禁，不能沿用旧提交结果放行。
+
+| 检查 | 实际结果 | 尚未验证范围 |
+| --- | --- | --- |
+| Linux / Windows 完整质量门禁 | 两个平台均通过 lint、格式、类型检查与单元/集成测试 | Windows 单元测试使用 offscreen；原生界面另验 |
+| Ubuntu 22.04 x64 冻结 TUI | 归档重新解压后完成空标签、PNG→JPEG、1,001 张 PNG 压缩；全部核验实际输出并正常退出 0；子进程 PATH 无 Python，使用独立网络命名空间断网 | 代表操作，不是每项功能的大规模数据验收 |
+| Ubuntu 22.04 x64 冻结 GUI | 原生 X11 自动操作产生 2 个真实空标签，截图及输出核验通过，用户窗口关闭后退出 0；使用同样的断网和子进程 PATH 隔离 | Xvfb 自动桌面，不是物理桌面人工验收 |
+| Ubuntu 22.04 ARM64 冻结 TUI | 云端原生 ARM64 构建；三个操作及 1,001 个压缩输出通过；断网、子进程 PATH 无 Python、正常退出 0 | 未提供 ARM64 GUI |
+| Windows Server 2022 原生 GUI | 100% / 125% 的真实空标签和 PNG→JPEG 操作通过；150% 窗口超出可用屏幕导致验收失败，修复尚须在原生 runner 重新验证 | 应用 `QT_SCALE_FACTOR` 缩放，不能宣称物理 Windows 10/11 设备 DPI 验收 |
+| Windows 冻结 GUI/TUI | 原生布局门禁失败，构建及运行步骤未执行 | 尚无本次版本的 Windows 离线包运行证据 |
+| Ubuntu 24.04 冻结运行 | 因 Windows 矩阵失败，本轮下游验收跳过 | 必须补齐真实运行结果 |
+
+验收诊断和截图位于该运行的 `acceptance-linux-x64`、`acceptance-linux-arm64`、`acceptance-windows-x64` 制品；[PR #1](https://github.com/haohex/integrated_script/pull/1) 保持 draft。
 
 ## 环境与比较基线
 
@@ -29,7 +46,7 @@
 | Ubuntu 22.04 冻结包 | 断网、只读根目录、无系统 Python 下 TUI/GUI 版本命令成功；GUI offscreen 保持事件循环 | 退出码 124 来自验收限时结束，不是正常 GUI 退出证据 |
 | 冻结 TUI 真实操作 | 中文和空格路径中创建空标签、PNG 转 JPEG，退出码 0 | 最终新包尚须重新解压并验证 |
 
-## 最终收尾验收
+## 历史收尾验收（2026-10-08，v3.0.0）
 
 | 检查 | 实际结果 |
 | --- | --- |
@@ -56,7 +73,7 @@
 
 最终门禁使用 `.venv`，将 `PATH` 指向 `.venv/bin`、`QT_QPA_PLATFORM=offscreen`，并将 XDG 配置、日志、缓存与数据目录指向新建临时根，再执行 `make check-all`。7 项跳过仅因既有 `.claude/commands/release.md` 和 `.claude/skills/release/SKILL.md` 不存在。真实界面测试已显式注入临时 `ConfigManager` 和工作目录，修复了首次全量验收等待旧配置导入弹窗的问题；正常应用的导入确认行为保留。
 
-## 视觉证据与平台限制
+## 历史视觉证据与平台限制
 
 [截图与设计验收](design/visual-acceptance.md)提供 Linux Qt offscreen PNG 和 Textual SVG。操作目录来自真实 AppService；运行进度、确认和成功/失败报告使用人工构造的展示状态，不代表截图中的 15,200 张图片已经实际处理。
 
@@ -64,9 +81,9 @@
 | --- | --- |
 | Ubuntu 22.04 x64 | 最终基线包真实隔离构建、无 Python 断网 TUI 实际操作和 GUI offscreen 启动通过；原生桌面文件对话框未实机检查 |
 | Ubuntu 24.04 x64 | 最终包的容器 TUI 实际操作通过；GUI 原生桌面未验证 |
-| Windows 10/11 x64 | GUI windowed 入口、图标、原生 CI 构建配置；未实际构建或验证原生外观及 100–200% 缩放 |
-| macOS Intel / Apple Silicon | 原生 CI 与 `.app` 打包配置，声明部署目标 13.0；未实机验证，尤其不把部署目标当作 macOS 13 运行证据 |
-| Linux ARM64 TUI | 保留自托管 runner；尚未实际构建运行 |
+| Windows 10/11 x64 | 当时仅有 GUI windowed 入口、图标及构建配置；本次 Server 2022 云端证据见上方新版本记录 |
+| macOS Intel / Apple Silicon | 早期设计曾包含 `.app`；当前发布范围按用户要求排除 macOS 包 |
+| Linux ARM64 TUI | 当时尚未实际构建运行；本次已改用云端原生 ARM64 runner 并验收通过，见上方记录 |
 
 ## 已知验收副作用
 

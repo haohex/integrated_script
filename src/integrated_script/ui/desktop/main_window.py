@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QRect, QSize, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
         self._style_hints_connected: bool = False
 
         self.setWindowTitle("集成脚本工具")
-        self.setMinimumSize(720, 420)
+        self.setMinimumSize(400, 280)
         self._clamp_to_screen(1200, 780)
 
         # Global window close shortcut (Alt+F4 support even in WM-less environments)
@@ -90,23 +90,94 @@ class MainWindow(QMainWindow):
         self.poll_timer.timeout.connect(self._poll_events)
         self.poll_timer.start()
 
-    def _clamp_to_screen(self, target_width: int, target_height: int) -> None:
-        """Clamp window size so it never exceeds screen.availableGeometry()."""
+    def _clamp_to_screen(
+        self,
+        target_width: int,
+        target_height: int,
+        avail_override: QRect | None = None,
+    ) -> None:
+        """Clamp window size and frame so it never exceeds screen.availableGeometry()."""
         screen = self.screen() or QApplication.primaryScreen()
-        if screen:
-            avail = screen.availableGeometry()
-            max_w = max(self.minimumWidth(), avail.width())
-            max_h = max(self.minimumHeight(), avail.height())
-            w = min(target_width, max_w)
-            h = min(target_height, max_h)
+        avail = (
+            avail_override
+            if avail_override is not None
+            else (screen.availableGeometry() if screen else None)
+        )
+        if avail:
+            frame_margin_w = max(
+                0, self.frameGeometry().width() - self.geometry().width()
+            )
+            frame_margin_h = max(
+                0, self.frameGeometry().height() - self.geometry().height()
+            )
+            max_client_w = max(380, avail.width() - frame_margin_w)
+            max_client_h = max(260, avail.height() - frame_margin_h)
+
+            min_w = min(400, max_client_w)
+            min_h = min(280, max_client_h)
+            self.setMinimumSize(min_w, min_h)
+
+            w = max(min_w, min(target_width, max_client_w))
+            h = max(min_h, min(target_height, max_client_h))
             self.resize(w, h)
+
+            # Keep window entirely within screen.availableGeometry()
+            cur_pos = self.pos()
+            clamped_x = max(avail.left(), min(cur_pos.x(), avail.right() - w + 1))
+            clamped_y = max(avail.top(), min(cur_pos.y(), avail.bottom() - h + 1))
+            self.move(clamped_x, clamped_y)
+
+            # Responsive splitter allocation
+            if hasattr(self, "splitter"):
+                self._update_splitter_proportions(w)
         else:
             self.resize(target_width, target_height)
+
+    def _update_splitter_proportions(self, width: int | None = None) -> None:
+        """Allocate responsive width between navigation tree and content panel."""
+        if not hasattr(self, "splitter"):
+            return
+        w = width if width is not None else self.width()
+        is_compact = (
+            getattr(self, "btn_compact", None) is not None
+            and self.btn_compact.isChecked()
+        )
+        if is_compact:
+            if w < 540:
+                nav_w = max(60, int(w * 0.22))
+            elif w < 750:
+                nav_w = max(140, int(w * 0.26))
+            else:
+                nav_w = 220
+        else:
+            if w < 540:
+                nav_w = max(70, int(w * 0.25))
+            elif w < 750:
+                nav_w = max(160, int(w * 0.3))
+            else:
+                nav_w = 260
+        content_w = max(200, w - nav_w)
+        self.splitter.setSizes([nav_w, content_w])
 
     def showEvent(self, event) -> None:
         """Ensure window fits available screen geometry upon display."""
         super().showEvent(event)
         self._clamp_to_screen(self.width(), self.height())
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Adjust header and toolbar items responsively on size changes."""
+        super().resizeEvent(event)
+        w = event.size().width()
+        if hasattr(self, "lbl_title") and hasattr(self, "search_input"):
+            if w < 540:
+                self.lbl_title.setVisible(False)
+                self.search_input.setMaximumWidth(140)
+            elif w < 720:
+                self.lbl_title.setVisible(True)
+                self.search_input.setMaximumWidth(200)
+            else:
+                self.lbl_title.setVisible(True)
+                self.search_input.setMaximumWidth(320)
 
     def _setup_system_theme_listener(self) -> None:
         """Connect to Qt styleHints().colorSchemeChanged if available."""
@@ -173,9 +244,9 @@ class MainWindow(QMainWindow):
         self.lbl_logo.setPixmap(get_icon("app", size=24).pixmap(24, 24))
         top_layout.addWidget(self.lbl_logo)
 
-        lbl_title = QLabel("集成脚本工具", top_bar)
-        lbl_title.setObjectName("window_title")
-        top_layout.addWidget(lbl_title)
+        self.lbl_title = QLabel("集成脚本工具", top_bar)
+        self.lbl_title.setObjectName("window_title")
+        top_layout.addWidget(self.lbl_title)
 
         top_layout.addSpacing(16)
 
@@ -489,6 +560,8 @@ class MainWindow(QMainWindow):
         # Reset execution state views
         self.exec_panel.setVisible(False)
         self.result_view.setVisible(False)
+        self.log_edit.clear()
+        self.result_view.clear_logs()
         self.lbl_status.setText("就绪")
         self.btn_execute.setEnabled(not self.service.busy)
 
@@ -539,6 +612,7 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(0)
             self.lbl_step.setText("正在启动任务...")
             self.log_edit.clear()
+            self.result_view.clear_logs()
             self.lbl_status.setText("正在执行...")
             self.btn_execute.setEnabled(False)
 
@@ -588,7 +662,10 @@ class MainWindow(QMainWindow):
 
         elif kind == "completed":
             self.progress_bar.setValue(100)
+            self.exec_panel.setVisible(False)
             self.btn_execute.setEnabled(True)
+            current_logs = self.log_edit.toPlainText()
+            self.result_view.set_logs(current_logs)
             res = getattr(event, "result", None)
             if res is not None:
                 if res.success:
@@ -604,7 +681,10 @@ class MainWindow(QMainWindow):
 
         elif kind == "failed":
             self.lbl_status.setText("执行失败")
+            self.exec_panel.setVisible(False)
             self.btn_execute.setEnabled(True)
+            current_logs = self.log_edit.toPlainText()
+            self.result_view.set_logs(current_logs)
             res = getattr(event, "result", None)
             if res is not None:
                 self.result_view.show_result(res)
@@ -627,10 +707,9 @@ class MainWindow(QMainWindow):
             checked = self.btn_compact.isChecked()
         if checked:
             self._clamp_to_screen(980, 600)
-            self.splitter.setSizes([220, max(400, self.width() - 220)])
         else:
             self._clamp_to_screen(1200, 780)
-            self.splitter.setSizes([260, max(500, self.width() - 260)])
+        self._update_splitter_proportions()
 
     def _on_theme_changed(self, index: int) -> None:
         mode = self.theme_combo.itemData(index)
