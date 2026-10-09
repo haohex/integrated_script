@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QRect, QSize
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -47,6 +48,7 @@ class LogViewerDialog(QDialog):
 
     def __init__(self, logs: str, parent: QWidget | None = None):
         super().__init__(parent)
+        self._avail_override: QRect | None = None
         self.setWindowTitle("执行日志详情")
         self.resize(680, 440)
         self.setMinimumSize(320, 200)
@@ -80,6 +82,55 @@ class LogViewerDialog(QDialog):
         btn_box.addWidget(btn_close)
         layout.addLayout(btn_box)
 
+    def _clamp_to_screen(
+        self,
+        target_w: int = 680,
+        target_h: int = 440,
+        avail_override: QRect | None = None,
+    ) -> None:
+        """Clamp dialog size and frame within available screen geometry."""
+        if avail_override is not None:
+            self._avail_override = avail_override
+        avail = self._avail_override
+        if avail is None:
+            screen = self.screen() or QApplication.primaryScreen()
+            avail = screen.availableGeometry() if screen else None
+        if not avail:
+            self.resize(target_w, target_h)
+            return
+
+        offset_x = self.frameGeometry().left() - self.pos().x()
+        offset_y = self.frameGeometry().top() - self.pos().y()
+        fm_w = max(0, self.frameGeometry().width() - self.geometry().width())
+        fm_h = max(0, self.frameGeometry().height() - self.geometry().height())
+
+        max_c_w = max(320, avail.width() - fm_w)
+        max_c_h = max(200, avail.height() - fm_h)
+        min_w = min(320, max_c_w)
+        min_h = min(200, max_c_h)
+        self.setMinimumSize(min_w, min_h)
+
+        w = max(min_w, min(target_w, max_c_w))
+        h = max(min_h, min(target_h, max_c_h))
+        self.resize(w, h)
+
+        frame_w = w + fm_w
+        frame_h = h + fm_h
+        min_pos_x = avail.left() - offset_x
+        max_pos_x = avail.right() - offset_x - frame_w + 1
+        min_pos_y = avail.top() - offset_y
+        max_pos_y = avail.bottom() - offset_y - frame_h + 1
+
+        cur_pos = self.pos()
+        clamped_x = max(min_pos_x, min(cur_pos.x(), max(min_pos_x, max_pos_x)))
+        clamped_y = max(min_pos_y, min(cur_pos.y(), max(min_pos_y, max_pos_y)))
+        self.move(clamped_x, clamped_y)
+
+    def showEvent(self, event: Any) -> None:
+        """Clamp dialog to available screen upon display."""
+        super().showEvent(event)
+        self._clamp_to_screen(self.width(), self.height())
+
     def _copy_to_clipboard(self) -> None:
         clipboard = QApplication.clipboard()
         if clipboard:
@@ -94,12 +145,22 @@ class ResultView(QWidget):
         self.current_payload: dict[str, Any] = {}
         self._last_result: OperationResult | None = None
 
-        self.main_layout = QVBoxLayout(self)
+        self.root_layout = QVBoxLayout(self)
+        self.root_layout.setContentsMargins(0, 0, 0, 0)
+        self.root_layout.setSpacing(0)
+
+        # Scroll area container for result content so it is scrollable and never clipped
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+
+        self.scroll_content = QWidget(self.scroll_area)
+        self.main_layout = QVBoxLayout(self.scroll_content)
         self.main_layout.setContentsMargins(12, 12, 12, 12)
         self.main_layout.setSpacing(12)
 
         # 1. Status Banner
-        self.banner = QFrame(self)
+        self.banner = QFrame(self.scroll_content)
         self.banner_layout = QHBoxLayout(self.banner)
         self.banner_layout.setContentsMargins(12, 10, 12, 10)
         self.banner_layout.setSpacing(10)
@@ -125,14 +186,15 @@ class ResultView(QWidget):
         self.main_layout.addWidget(self.banner)
 
         # 2. Key Metrics Summary Cards Grid
-        self.summary_container = QWidget(self)
+        self.summary_container = QWidget(self.scroll_content)
         self.summary_grid = QGridLayout(self.summary_container)
         self.summary_grid.setContentsMargins(0, 0, 0, 0)
         self.summary_grid.setSpacing(8)
         self.main_layout.addWidget(self.summary_container)
 
         # 3. Tab Widget for Tables, Tree, Raw JSON, and Execution Logs
-        self.tabs = QTabWidget(self)
+        self.tabs = QTabWidget(self.scroll_content)
+        self.tabs.setMinimumHeight(140)
 
         # Tab: Data Tables
         self.table_container = QWidget(self.tabs)
@@ -206,6 +268,9 @@ class ResultView(QWidget):
         self.tabs.addTab(self.log_container, "执行日志")
 
         self.main_layout.addWidget(self.tabs, 1)
+
+        self.scroll_area.setWidget(self.scroll_content)
+        self.root_layout.addWidget(self.scroll_area, 1)
 
     def minimumSizeHint(self) -> QSize:
         """Return constrained responsive minimum size hint to prevent dialog/parent clipping."""

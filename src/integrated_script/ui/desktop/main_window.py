@@ -339,6 +339,12 @@ class MainWindow(QMainWindow):
         title_row.addWidget(self.badge_destructive)
         title_row.addStretch()
 
+        self.btn_toggle_params = QPushButton("展开参数", self.op_header_widget)
+        self.btn_toggle_params.setIcon(get_icon("sliders"))
+        self.btn_toggle_params.setVisible(False)
+        self.btn_toggle_params.clicked.connect(self._on_toggle_params_clicked)
+        title_row.addWidget(self.btn_toggle_params)
+
         op_header_layout.addLayout(title_row)
 
         self.lbl_op_desc = QLabel("", self.op_header_widget)
@@ -556,6 +562,9 @@ class MainWindow(QMainWindow):
         # Build dynamic form
         self.current_form = FormBuilder(op.fields, self.form_scroll)
         self.form_scroll.setWidget(self.current_form)
+        self.form_scroll.setVisible(True)
+        if hasattr(self, "btn_toggle_params"):
+            self.btn_toggle_params.setVisible(False)
 
         # Reset execution state views
         self.exec_panel.setVisible(False)
@@ -569,6 +578,13 @@ class MainWindow(QMainWindow):
         if self.current_form:
             self.current_form.reset_defaults()
             self.lbl_status.setText("表单已重置为默认值")
+
+    def _on_toggle_params_clicked(self) -> None:
+        """Toggle parameters form visibility to reclaim or yield vertical space."""
+        is_visible = not self.form_scroll.isVisible()
+        self.form_scroll.setVisible(is_visible)
+        if hasattr(self, "btn_toggle_params"):
+            self.btn_toggle_params.setText("收起参数" if is_visible else "展开参数")
 
     def _on_execute_clicked(self) -> None:
         if not self.active_operation:
@@ -607,6 +623,9 @@ class MainWindow(QMainWindow):
 
         # 3. Start Task via Contract
         try:
+            self.form_scroll.setVisible(True)
+            if hasattr(self, "btn_toggle_params"):
+                self.btn_toggle_params.setVisible(False)
             self.exec_panel.setVisible(True)
             self.result_view.setVisible(False)
             self.progress_bar.setValue(0)
@@ -664,6 +683,10 @@ class MainWindow(QMainWindow):
             self.progress_bar.setValue(100)
             self.exec_panel.setVisible(False)
             self.btn_execute.setEnabled(True)
+            self.form_scroll.setVisible(False)
+            if hasattr(self, "btn_toggle_params"):
+                self.btn_toggle_params.setText("展开参数")
+                self.btn_toggle_params.setVisible(True)
             current_logs = self.log_edit.toPlainText()
             self.result_view.set_logs(current_logs)
             res = getattr(event, "result", None)
@@ -683,6 +706,10 @@ class MainWindow(QMainWindow):
             self.lbl_status.setText("执行失败")
             self.exec_panel.setVisible(False)
             self.btn_execute.setEnabled(True)
+            self.form_scroll.setVisible(False)
+            if hasattr(self, "btn_toggle_params"):
+                self.btn_toggle_params.setText("展开参数")
+                self.btn_toggle_params.setVisible(True)
             current_logs = self.log_edit.toPlainText()
             self.result_view.set_logs(current_logs)
             res = getattr(event, "result", None)
@@ -723,6 +750,8 @@ class MainWindow(QMainWindow):
             get_icon("app", size=24, theme_name=theme_name).pixmap(24, 24)
         )
         self.btn_reset.setIcon(get_icon("refresh", theme_name=theme_name))
+        if hasattr(self, "btn_toggle_params"):
+            self.btn_toggle_params.setIcon(get_icon("sliders", theme_name=theme_name))
         self.btn_execute.setIcon(
             get_icon(
                 "play",

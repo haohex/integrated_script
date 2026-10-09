@@ -280,3 +280,118 @@ def test_main_window_screen_adaptation_simulated_scales(qapp):
             win.close()
         finally:
             srv.close()
+
+
+def test_client_348_real_app_service_and_result_scroll_lifecycle(qapp):
+    """Regression test: client 512x348 with real AppService in completed/failed states.
+
+    Verifies:
+    1. Vertical space allocation giving result_view unclipped height.
+    2. Result content scroll container allows browsing full table/log/payload.
+    3. btn_toggle_params restores parameters and collapses back.
+    4. Action buttons (execute, reset, copy) remain usable and unclipped.
+    """
+    from PIL import Image
+    from PySide6.QtCore import QRect
+
+    with tempfile.TemporaryDirectory() as td:
+        p_td = Path(td)
+        cfg = ConfigManager(config_file=p_td / "c.json", auto_save=False)
+        srv = AppService(cfg, working_directory=p_td)
+        try:
+            win = MainWindow(service=srv)
+            avail_rect = QRect(0, 0, 512, 364)
+            win._clamp_to_screen(512, 348, avail_override=avail_rect)
+            win.resize(512, 348)
+            win.show()
+            qapp.processEvents()
+
+            assert win.width() == 512
+            assert win.height() == 348
+            assert win.form_scroll.isVisible()
+            assert not win.btn_toggle_params.isVisible()
+
+            # Execute real operation: label.create_empty
+            img_dir = p_td / "imgs"
+            lbl_dir = p_td / "lbls"
+            img_dir.mkdir(parents=True, exist_ok=True)
+            lbl_dir.mkdir(parents=True, exist_ok=True)
+            Image.new("RGB", (32, 32), color="red").save(img_dir / "img1.jpg", "JPEG")
+
+            win._select_operation_by_id("label.create_empty")
+            win.current_form.widgets["images_dir"].set_path(str(img_dir))
+            win.current_form.widgets["labels_dir"].set_path(str(lbl_dir))
+
+            win.btn_execute.click()
+            for _ in range(50):
+                win._poll_events()
+                qapp.processEvents()
+                if win.result_view.isVisible():
+                    break
+
+            # 1. Result State Verification in 512x348
+            assert win.result_view.isVisible()
+            assert not win.form_scroll.isVisible()
+            assert win.btn_toggle_params.isVisible()
+            assert win.btn_toggle_params.text() == "展开参数"
+            assert win.btn_execute.isVisible() and win.btn_execute.isEnabled()
+            assert win.btn_reset.isVisible()
+
+            # Clipping check: result_view must NOT be clipped
+            rv = win.result_view
+            assert rv.size().width() >= rv.minimumSizeHint().width() - 2
+            assert rv.size().height() >= rv.minimumSizeHint().height() - 2
+            assert rv.scroll_area is not None
+            assert rv.scroll_area.isVisible()
+
+            # 2. Log entry and copying
+            rv.btn_view_logs.click()
+            qapp.processEvents()
+            assert rv.tabs.currentWidget() == rv.log_container
+            assert rv.btn_copy_log.isVisible() and rv.btn_copy_log.isEnabled()
+
+            # 3. Parameters restoration & re-collapse
+            win.btn_toggle_params.click()
+            qapp.processEvents()
+            assert win.form_scroll.isVisible()
+            assert win.btn_toggle_params.text() == "收起参数"
+            # Form values remain intact
+            assert win.current_form.widgets["images_dir"].get_path() == str(img_dir)
+
+            win.btn_toggle_params.click()
+            qapp.processEvents()
+            assert not win.form_scroll.isVisible()
+            assert win.btn_toggle_params.text() == "展开参数"
+
+            win.close()
+        finally:
+            srv.close()
+
+
+def test_log_viewer_dialog_screen_containment_and_margins(qapp):
+    """Regression test: LogViewerDialog adapts to 512x364 screen containment with native frames."""
+    from PySide6.QtCore import QRect
+
+    from integrated_script.ui.desktop.widgets.result_view import LogViewerDialog
+
+    sample_logs = (
+        "[INFO] Pipeline starting...\n[DEBUG] Processing item 1\n[SUCCESS] Completed."
+    )
+    dlg = LogViewerDialog(sample_logs)
+    avail_rect = QRect(0, 0, 512, 364)
+    dlg._clamp_to_screen(680, 440, avail_override=avail_rect)
+    dlg.show()
+    qapp.processEvents()
+
+    fg = dlg.frameGeometry()
+    tolerance = 2
+    assert fg.left() >= avail_rect.left() - tolerance
+    assert fg.top() >= avail_rect.top() - tolerance
+    assert fg.right() <= avail_rect.right() + tolerance
+    assert fg.bottom() <= avail_rect.bottom() + tolerance
+    assert fg.width() <= avail_rect.width() + 2 * tolerance
+    assert fg.height() <= avail_rect.height() + 2 * tolerance
+
+    assert dlg.btn_copy.isVisible() and dlg.btn_copy.isEnabled()
+    assert dlg.log_view.toPlainText() == sample_logs
+    dlg.accept()

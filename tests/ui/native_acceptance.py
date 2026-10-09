@@ -205,15 +205,18 @@ def run_single_scale_worker(scale: float, output_dir: Path) -> dict[str, Any]:
         time.sleep(0.08)
         pixmap = widget.grab()
 
-        banner_height = 28
+        dpr = pixmap.devicePixelRatio()
+        banner_logical = 28
+        banner_height = int(banner_logical * dpr)
         combined = QPixmap(pixmap.width(), pixmap.height() + banner_height)
+        combined.setDevicePixelRatio(dpr)
         combined.fill(QColor("#181818"))
 
         painter = QPainter(combined)
         painter.drawPixmap(0, 0, pixmap)
-        painter.fillRect(
-            0, pixmap.height(), pixmap.width(), banner_height, QColor("#101010")
-        )
+        logical_h = int(pixmap.height() / dpr)
+        logical_w = int(pixmap.width() / dpr)
+        painter.fillRect(0, logical_h, logical_w, banner_logical, QColor("#101010"))
         painter.setPen(QColor("#9E9E9E"))
         font = QFont("sans-serif", 9)
         painter.setFont(font)
@@ -227,7 +230,7 @@ def run_single_scale_worker(scale: float, output_dir: Path) -> dict[str, Any]:
             f"原生验收 | 状态: {watermark_title} | 缩放: {scale*100:.0f}% (QT_SCALE_FACTOR) | "
             f"平台: {plat_desc} | 标题条: Qt Client Area"
         )
-        painter.drawText(12, pixmap.height() + 18, wm_text)
+        painter.drawText(12, logical_h + 18, wm_text)
         painter.end()
 
         out_path = output_dir / filename
