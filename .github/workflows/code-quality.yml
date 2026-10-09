@@ -24,6 +24,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: ${{ startsWith(matrix.os, 'windows') && 'windows' || 'offscreen' }}
       PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

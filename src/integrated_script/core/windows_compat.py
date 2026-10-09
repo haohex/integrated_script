@@ -76,7 +76,7 @@ def setup_console_encoding() -> bool:
 
     try:
         # 设置标准输入输出编码
-        if hasattr(sys.stdout, "reconfigure"):
+        if hasattr(sys.stdout, "reconfigure") and hasattr(sys.stderr, "reconfigure"):
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")
             return True

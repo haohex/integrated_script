@@ -12,6 +12,7 @@ permissions:
 env:
   PYTHON_VERSION: '3.11'
   PYTHONIOENCODING: utf-8
+  PYTHONUTF8: '1'
 
 jobs:
   quality:
