@@ -58,6 +58,7 @@ Presentation entrypoints: `ui.desktop.app.run_gui(service=None) -> int`, `ui.tui
 - Offline bundle startup and representative work, tested on the minimum Linux baseline. Host Ubuntu26 output does not prove Ubuntu22 compatibility; a workflow definition does not prove Windows/macOS execution.
 - Theme tests cover system light/dark transitions, explicit-choice protection and unknown hints. Screenshot tests exercise normal and exceptional cleanup while preserving a simulated existing user configuration.
 - Non-migration UI integration fixtures inject an explicit temporary ConfigManager and working directory. A default AppService against repository cwd can correctly request legacy-config import in a fresh XDG environment, blocking an unattended modal test. Keep migration coverage separate through public start/poll/respond; do not disable production import prompts to make tests pass.
+- Asynchronous UI integration tests use a bounded monotonic deadline, drain service/Qt events and yield time to the worker. Assert both terminal service state and visible results, then verify actual output files. Fixed-count tight polling is not a completion guarantee; cleanup waits for a writing worker before calling close.
 
 ## 7. Wrong vs Correct
 Wrong: catch ImportError and launch FakeAppService; duplicate dataclasses in a UI fallback; call a processor directly from a button; convert optional bool default=None with bool(default).

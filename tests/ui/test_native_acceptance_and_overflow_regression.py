@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import PropertyMock, patch
 
@@ -298,6 +299,7 @@ def test_client_348_real_app_service_and_result_scroll_lifecycle(qapp):
         p_td = Path(td)
         cfg = ConfigManager(config_file=p_td / "c.json", auto_save=False)
         srv = AppService(cfg, working_directory=p_td)
+        win = None
         try:
             win = MainWindow(service=srv)
             avail_rect = QRect(0, 0, 512, 364)
@@ -323,11 +325,18 @@ def test_client_348_real_app_service_and_result_scroll_lifecycle(qapp):
             win.current_form.widgets["labels_dir"].set_path(str(lbl_dir))
 
             win.btn_execute.click()
-            for _ in range(50):
+            deadline = time.monotonic() + 5.0
+            while time.monotonic() < deadline:
                 win._poll_events()
                 qapp.processEvents()
-                if win.result_view.isVisible():
+                if not srv.busy and win.result_view.isVisible():
                     break
+                time.sleep(0.01)
+
+            assert not srv.busy, "AppService was still busy after 5.0s timeout"
+            assert (
+                win.result_view.isVisible()
+            ), "result_view was not visible after 5.0s timeout"
 
             # 1. Result State Verification in 512x348
             assert win.result_view.isVisible()
@@ -336,6 +345,11 @@ def test_client_348_real_app_service_and_result_scroll_lifecycle(qapp):
             assert win.btn_toggle_params.text() == "展开参数"
             assert win.btn_execute.isVisible() and win.btn_execute.isEnabled()
             assert win.btn_reset.isVisible()
+
+            # Verify real operation output: empty label file exists and is empty
+            expected_lbl = lbl_dir / "img1.txt"
+            assert expected_lbl.exists()
+            assert expected_lbl.read_text(encoding="utf-8") == ""
 
             # Clipping check: result_view must NOT be clipped
             rv = win.result_view
@@ -365,7 +379,18 @@ def test_client_348_real_app_service_and_result_scroll_lifecycle(qapp):
 
             win.close()
         finally:
-            srv.close()
+            if srv is not None:
+                drain_deadline = time.monotonic() + 5.0
+                while srv.busy and time.monotonic() < drain_deadline:
+                    if win is not None:
+                        win._poll_events()
+                    qapp.processEvents()
+                    time.sleep(0.01)
+            if win is not None:
+                win.close()
+                qapp.processEvents()
+            if srv is not None:
+                srv.close()
 
 
 def test_log_viewer_dialog_screen_containment_and_margins(qapp):
