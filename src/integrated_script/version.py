@@ -4,12 +4,13 @@
 version.py
 
 统一版本读取入口。
-优先从仓库 pyproject.toml 读取，回退到已安装包元数据。
+源码优先读取仓库 pyproject.toml；冻结程序读取包内元数据。
 """
 
 from __future__ import annotations
 
 import re
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional, Tuple
@@ -54,7 +55,11 @@ def _find_pyproject(start_file: Path) -> Optional[Path]:
 @lru_cache(maxsize=1)
 def get_version() -> str:
     """获取应用版本号。"""
-    pyproject_file = _find_pyproject(Path(__file__))
+    # A frozen executable must identify its embedded build, even if extracted
+    # beneath another checkout containing a different pyproject.toml.
+    pyproject_file = (
+        None if getattr(sys, "frozen", False) else _find_pyproject(Path(__file__))
+    )
     if pyproject_file is not None:
         content = pyproject_file.read_text(encoding="utf-8")
         in_project_section = False

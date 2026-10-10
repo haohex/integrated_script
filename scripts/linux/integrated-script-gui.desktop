@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=集成脚本工具（桌面）
+Name[en]=Integrated Script (Desktop)
+Comment=离线数据集与图像处理工具（Qt 桌面界面，需要 PySide6）
+Comment[en]=Offline dataset and image processing tool (Qt desktop, requires PySide6)
+Exec=integrated-script --gui
+Terminal=false
+Categories=Development;Utility;
+Icon=integrated-script
+StartupNotify=true

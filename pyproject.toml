@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "integrated-script"
-version = "3.0.0"
+version = "3.0.1"
 description = "一个模块化的数据处理整合脚本项目"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     {name = "Integrated Script Team", email = "team@example.com"},
@@ -17,24 +17,33 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Image Processing",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+# 运行期依赖：基础安装即可运行 TUI + 旧交互界面，不引入 Qt。
 dependencies = [
     "tqdm>=4.64.0",
     "Pillow>=9.0.0",
     "opencv-python-headless>=4.5.0",
     "PyYAML>=6.0",
     "requests>=2.28.0",
+    "platformdirs>=4.0.0",
+    "textual>=8.0,<9",
 ]
 
 [project.optional-dependencies]
+# Qt 桌面界面为显式可选组件，TUI 与核心逻辑不依赖 Qt。
+# 构建锁 requirements-build-gui.txt 固定为 6.8.3（见 docs/offline-deployment.md）。
+gui = [
+    "PySide6==6.8.3",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
@@ -43,6 +52,15 @@ dev = [
     "flake8>=4.0.0",
     "mypy>=0.991",
     "pre-commit>=2.20.0",
+]
+# 界面相关测试（GUI/TUI）所需的额外工具链。
+dev-ui = [
+    "pytest-qt>=4.4.0",
+    "pytest-asyncio>=0.23.0",
+]
+# 离线可执行文件构建链（构建机可联网，产物离线运行）。
+build = [
+    "pyinstaller>=6.10",
 ]
 docs = [
     "sphinx>=5.0.0",
@@ -56,23 +74,37 @@ optional = [
 ]
 
 [project.scripts]
+# 默认入口：Textual 终端界面（TUI）。
 integrated-script = "integrated_script.main:main"
 
+[project.gui-scripts]
+# Windows 下生成无控制台窗口的 GUI 启动器；macOS/Linux 行为等同普通入口。
+integrated-script-gui = "integrated_script.main:gui_main"
+
 [project.urls]
-"Homepage" = "https://github.com/example/integrated-script"
-"Bug Reports" = "https://github.com/example/integrated-script/issues"
-"Source" = "https://github.com/example/integrated-script"
+"Homepage" = "https://github.com/haohex/integrated_script"
+"Bug Reports" = "https://github.com/haohex/integrated_script/issues"
+"Source" = "https://github.com/haohex/integrated_script"
 "Documentation" = "https://integrated-script.readthedocs.io/"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-integrated_script = ["config/*.json", "config/*.yaml"]
+# 离线运行所需的本地资源：配置模板、本地图标与许可证。
+integrated_script = [
+    "config/*.json",
+    "config/*.yaml",
+    "config/*.yml",
+    "assets/icons/*.svg",
+    "assets/icons/LICENSE",
+    "assets/**/*.png",
+    "assets/**/*.ico",
+]
 
 [tool.black]
 line-length = 88
-target-version = ['py37', 'py38', 'py39', 'py310', 'py311']
+target-version = ['py311']
 include = '\.pyi?$'
 extend-exclude = '''
 (
@@ -116,7 +148,7 @@ ensure_newline_before_comments = true
 skip = [".git", "__pycache__", "build", "dist", ".eggs", "*.egg-info", ".venv", ".tox"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = false
 warn_unused_configs = true
 disallow_untyped_defs = false

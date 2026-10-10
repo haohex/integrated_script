@@ -30,7 +30,7 @@ if sys.platform == "win32":
         print(f"警告: Windows兼容性初始化失败: {e}")
 
 # 导入主函数
-from integrated_script.main import main
+from integrated_script.main import main  # noqa: E402 - 需先插入 src 路径
 
 if __name__ == "__main__":
     sys.exit(main())

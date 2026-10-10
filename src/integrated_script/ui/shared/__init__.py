@@ -1,0 +1,76 @@
+# -*- coding: utf-8 -*-
+"""Shared UI presentation models, formatting, theme resolution, and contracts."""
+
+from integrated_script.ui.shared.contract import (
+    AppService,
+    InteractionRequest,
+    OperationSpec,
+    ParameterSpec,
+    TaskEvent,
+)
+from integrated_script.ui.shared.formatters import (
+    SummaryItem,
+    TableData,
+    TreeNode,
+    build_payload_tree,
+    extract_summary_items,
+    extract_tables,
+    format_bytes,
+    format_duration,
+    format_number,
+    format_payload_json,
+)
+from integrated_script.ui.shared.path_utils import (
+    clean_path_input,
+    normalize_user_path,
+    parse_multiline_paths,
+    truncate_path_for_display,
+)
+from integrated_script.ui.shared.theme import (
+    DARK_PALETTE,
+    LIGHT_PALETTE,
+    THEME_DARK,
+    THEME_LIGHT,
+    THEME_SYSTEM,
+    get_palette,
+    get_theme_config_path,
+    get_theme_config_path_override,
+    load_theme_preference,
+    resolve_effective_theme,
+    save_theme_preference,
+    set_theme_config_path_override,
+)
+
+__all__ = [
+    "AppService",
+    "ParameterSpec",
+    "OperationSpec",
+    "InteractionRequest",
+    "TaskEvent",
+    "SummaryItem",
+    "TableData",
+    "TreeNode",
+    "build_payload_tree",
+    "extract_summary_items",
+    "extract_tables",
+    "format_bytes",
+    "format_duration",
+    "format_number",
+    "format_payload_json",
+    "clean_path_input",
+    "normalize_user_path",
+    "parse_multiline_paths",
+    "truncate_path_for_display",
+    "THEME_SYSTEM",
+    "THEME_LIGHT",
+    "THEME_DARK",
+    "LIGHT_PALETTE",
+    "DARK_PALETTE",
+    "get_palette",
+    "get_theme_config_path",
+    "get_theme_config_path_override",
+    "load_theme_preference",
+    "save_theme_preference",
+    "resolve_effective_theme",
+    "set_theme_config_path_override",
+]

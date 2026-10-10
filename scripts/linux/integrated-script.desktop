@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=集成脚本工具（终端）
+Name[en]=Integrated Script (Terminal)
+Comment=离线数据集与图像处理工具（终端界面）
+Comment[en]=Offline dataset and image processing tool (terminal)
+Exec=integrated-script
+Terminal=true
+Categories=Development;Utility;
+Icon=integrated-script
+StartupNotify=false

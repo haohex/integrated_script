@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 try:
-    from tqdm import tqdm
+    import tqdm as _tqdm_module  # noqa: F401 - 仅用于检测可用性
 
     TQDM_AVAILABLE = True
 except ImportError:
@@ -40,6 +40,9 @@ except ImportError:
 
 from ...config.exceptions import FileProcessingError, ProcessingError
 from ...core.base import BaseProcessor
+from ...core.progress import create_progress_bar as _create_progress_bar
+from ...core.progress import get_progress_sink
+from ...core.progress import iterate_with_progress as _iterate_with_progress
 from ...core.progress import process_with_progress
 from ...core.utils import (
     create_directory,
@@ -549,9 +552,13 @@ class ImageProcessor(BaseProcessor):
         total_files = len(image_files)
 
         iterator = image_files
-        using_tqdm = TQDM_AVAILABLE and total_files > 0
+        using_tqdm = (
+            TQDM_AVAILABLE or get_progress_sink() is not None
+        ) and total_files > 0
         if using_tqdm:
-            iterator = tqdm(image_files, desc="修复图像", unit="张", total=total_files)
+            iterator = _iterate_with_progress(
+                image_files, total=total_files, description="修复图像", unit="张"
+            )
 
         for img_file in iterator:
             try:
@@ -1302,11 +1309,11 @@ class ImageProcessor(BaseProcessor):
         manager = mp.Manager()
         progress_queue = manager.Queue()
 
-        # 创建进度条
-        if TQDM_AVAILABLE:
-            progress_bar = tqdm(
+        # 创建进度条（应用层 sink 优先，否则保持终端 tqdm 行为）
+        if TQDM_AVAILABLE or get_progress_sink() is not None:
+            progress_bar = _create_progress_bar(
                 total=total_files,
-                desc="压缩图像",
+                description="压缩图像",
                 unit="文件",
                 ncols=80,
                 bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]",
@@ -1386,13 +1393,14 @@ class ImageProcessor(BaseProcessor):
                     if progress_bar:
                         success_count = stats["compressed_count"]
                         failed_count = stats["failed_count"]
-                        progress_bar.set_postfix(
-                            {
-                                "成功": success_count,
-                                "失败": failed_count,
-                                "批次": f"{completed_batches}/{actual_batch_count}",
-                            }
-                        )
+                        if hasattr(progress_bar, "set_postfix"):
+                            progress_bar.set_postfix(
+                                {
+                                    "成功": success_count,
+                                    "失败": failed_count,
+                                    "批次": f"{completed_batches}/{actual_batch_count}",
+                                }
+                            )
                     else:
                         # 如果没有 tqdm，显示简化的进度信息
                         progress_percent = (processed_files / total_files) * 100
@@ -1422,13 +1430,14 @@ class ImageProcessor(BaseProcessor):
                     # 手动更新进度条（因为失败的批次不会通过队列报告进度）
                     if progress_bar:
                         progress_bar.update(batch_size_actual)
-                        progress_bar.set_postfix(
-                            {
-                                "成功": result["statistics"]["compressed_count"],
-                                "失败": result["statistics"]["failed_count"],
-                                "批次": f"{completed_batches}/{actual_batch_count}",
-                            }
-                        )
+                        if hasattr(progress_bar, "set_postfix"):
+                            progress_bar.set_postfix(
+                                {
+                                    "成功": result["statistics"]["compressed_count"],
+                                    "失败": result["statistics"]["failed_count"],
+                                    "批次": f"{completed_batches}/{actual_batch_count}",
+                                }
+                            )
 
         # 停止进度监听线程
         progress_thread_running = False

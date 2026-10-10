@@ -1,60 +1,194 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""离线可执行文件打包脚本。
+
+用法::
+
+    python build_exe.py                 # 默认构建 TUI（兼容旧 main.py --build）
+    python build_exe.py --mode tui      # 仅终端界面（console，不含 Qt）
+    python build_exe.py --mode gui      # 仅桌面界面（Windows 下无控制台窗口）
+    python build_exe.py --mode all      # 依次构建 TUI 与 GUI
+
+设计要点：
+
+* 构建机允许联网安装依赖；产物为自包含 onedir，目标机器离线运行。
+* GUI 与 TUI 使用各自独立的 launcher 入口，二者都调用 ``integrated_script.main``
+  中已经约定的 ``main`` / ``gui_main``。
+* TUI 明确排除 Qt / PySide6 / 桌面界面模块；GUI 排除 TUI 与 WebEngine 等未使用组件。
+* 设计截图、测试代码与 fake 服务不得进入产物；构建后通过 :func:`verify_dist` 断言。
 """
-build_exe.py
 
-PyInstaller build script
+from __future__ import annotations
 
-Used to package integrated_script project as Windows executable
-"""
-
+import argparse
 import importlib.util
+import multiprocessing
 import os
 import platform
 import shlex
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Dict, List, Sequence, Tuple
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+MODES: Tuple[str, ...] = ("tui", "gui", "all")
+
+# 任何平台都不需要打进产物、且不属于产品运行路径的模块。
+_COMMON_EXCLUDES: Tuple[str, ...] = (
+    "tkinter",
+    "PyQt5",
+    "PyQt6",
+    "PySide2",
+    "pytest",
+    "_pytest",
+    "pytest_qt",
+    "pytest_asyncio",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+    "IPython",
+    "notebook",
+    "tests",
+)
+
+# 桌面界面用不到的 Qt 子模块，减小体积。
+_GUI_QT_EXCLUDES: Tuple[str, ...] = (
+    "PySide6.QtWebEngineCore",
+    "PySide6.QtWebEngineWidgets",
+    "PySide6.QtWebEngineQuick",
+    "PySide6.QtWebChannel",
+    "PySide6.QtWebSockets",
+    "PySide6.QtQml",
+    "PySide6.QtQuick",
+    "PySide6.QtQuickWidgets",
+    "PySide6.QtQuick3D",
+    "PySide6.Qt3DCore",
+    "PySide6.QtCharts",
+    "PySide6.QtDataVisualization",
+    "PySide6.QtMultimedia",
+    "PySide6.QtMultimediaWidgets",
+    "PySide6.QtBluetooth",
+    "PySide6.QtNfc",
+    "PySide6.QtSql",
+    "PySide6.QtTest",
+    "PySide6.QtDesigner",
+    "PySide6.QtHelp",
+    "PySide6.QtOpenGL",
+    "PySide6.QtOpenGLWidgets",
+    "PySide6.QtPdf",
+    "PySide6.QtPdfWidgets",
+    "PySide6.QtRemoteObjects",
+    "PySide6.QtSerialPort",
+    "PySide6.QtSpatialAudio",
+    "PySide6.QtSvgWidgets",
+    "PySide6.QtUiTools",
+    "PySide6.QtVirtualKeyboard",
+    "PySide6.QtNetworkAuth",
+    "PySide6.QtPositioning",
+)
+
+# TUI 明确排除 Qt 与桌面界面。
+_TUI_EXCLUDES: Tuple[str, ...] = (
+    "PySide6",
+    "shiboken6",
+    "integrated_script.ui.desktop",
+)
 
 
-def build_exe():
-    """Build the executable with inline PyInstaller configuration."""
+@dataclass(frozen=True)
+class BuildTarget:
+    """单个打包目标的不可变描述。"""
 
-    project_root = Path(__file__).parent
-    main_script = project_root / "main.py"
+    mode: str
+    name: str
+    entry: Path
+    console: bool
+    output_dir: Path
+    extra_excludes: Tuple[str, ...] = field(default=())
+    collect_all: Tuple[str, ...] = field(default=())
 
-    machine = platform.machine().lower()
-    is_arm64 = machine in {"aarch64", "arm64"}
-    print(f"Build machine: {machine} (arm64={is_arm64})")
+    @property
+    def executable_name(self) -> str:
+        suffix = ".exe" if os.name == "nt" else ""
+        return f"{self.name}{suffix}"
 
-    if not main_script.exists():
-        print(f"Error: Main script not found {main_script}")
-        return False
+    @property
+    def executable_path(self) -> Path:
+        return self.output_dir / self.executable_name
 
-    build_dir = project_root / "build"
-    if build_dir.exists():
-        try:
-            shutil.rmtree(build_dir)
-        except PermissionError:
-            print("Warning: Cannot delete build directory, continuing...")
 
-    if importlib.util.find_spec("PyInstaller") is None:
-        print(
-            "Error: PyInstaller is not available in the current Python interpreter."
-            " Install it in this environment (for example `python -m pip install pyinstaller`)."
-        )
-        return False
+def project_root() -> Path:
+    return PROJECT_ROOT
 
-    data_separator = ";" if os.name == "nt" else ":"
-    add_data = [
-        f"{project_root / 'config'}{data_separator}config",
-        f"{project_root / 'requirements.txt'}{data_separator}.",
-        f"{project_root / 'pyproject.toml'}{data_separator}.",
+
+def _launcher_script(mode: str) -> Path:
+    return PROJECT_ROOT / "scripts" / f"launch_{mode}.py"
+
+
+def resolve_targets(mode: str) -> List[BuildTarget]:
+    """把 ``--mode`` 解析为具体构建目标列表。"""
+    if mode not in MODES:
+        raise ValueError(f"未知构建模式: {mode!r}（可选：{', '.join(MODES)}）")
+
+    tui = BuildTarget(
+        mode="tui",
+        name="integrated_script",
+        entry=_launcher_script("tui"),
+        console=True,
+        output_dir=PROJECT_ROOT / "dist" / "integrated_script",
+        extra_excludes=_TUI_EXCLUDES,
+        collect_all=("textual",),
+    )
+    gui = BuildTarget(
+        mode="gui",
+        name="integrated_script_gui",
+        entry=_launcher_script("gui"),
+        console=False,
+        output_dir=PROJECT_ROOT / "dist" / "integrated_script_gui",
+        extra_excludes=_GUI_QT_EXCLUDES,
+        # 不用 --collect-all=PySide6：那会把整个 Qt（含 WebEngine/3D/Charts）都拉进来
+        # （实测 934MB）。PyInstaller 自带的 PySide6 hook + 显式 hidden-import 只收集
+        # 实际使用的 QtCore/QtGui/QtWidgets/QtSvg。
+    )
+
+    if mode == "tui":
+        return [tui]
+    if mode == "gui":
+        return [gui]
+    return [tui, gui]
+
+
+def _data_separator() -> str:
+    return ";" if os.name == "nt" else ":"
+
+
+def collect_add_data(root: Path) -> List[str]:
+    """需要随产物分发的本地资源（配置模板 / 图标 / 许可证）。"""
+    sep = _data_separator()
+    candidates = [
+        (root / "config", "config"),
+        (root / "LICENSE", "."),
     ]
+    pairs: List[str] = []
+    for source, destination in candidates:
+        if source.exists():
+            pairs.append(f"{source}{sep}{destination}")
 
-    hidden_imports = [
+    # 本地图标（含 icons/LICENSE）由 --collect-data=integrated_script 从包内
+    # package-data 一并收集，见 pyproject.toml [tool.setuptools.package-data]。
+    return pairs
+
+
+def collect_hidden_imports(target: BuildTarget) -> List[str]:
+    common = [
         "integrated_script",
+        "integrated_script.main",
+        "integrated_script.application",
         "integrated_script.config",
         "integrated_script.core",
         "integrated_script.processors",
@@ -63,111 +197,255 @@ def build_exe():
         "cv2",
         "yaml",
         "tqdm",
+        "platformdirs",
         "logging.handlers",
         "logging.config",
+        "multiprocessing",
+        "multiprocessing.spawn",
+        "concurrent.futures",
     ]
-
-    collect_args = [
-        "--collect-submodules=integrated_script",
-        "--collect-data=integrated_script",
-    ]
-
-    exclude_modules = ["tkinter", "PyQt5", "PyQt6"]
-
-    upx_path = shutil.which("upx")
-    upx_args = []
-    if is_arm64:
-        upx_args = ["--noupx"]
-        if upx_path:
-            print("Notice: ARM64 build disables UPX.")
-        else:
-            print("Notice: ARM64 build disables UPX (UPX not installed).")
-    elif upx_path:
-        upx_args = ["--upx-dir", str(Path(upx_path).resolve().parent)]
-        print("Notice: UPX enabled.")
+    if target.mode == "tui":
+        common += [
+            "integrated_script.ui.tui",
+            "integrated_script.ui.shared",
+            "textual",
+        ]
     else:
-        print("Notice: UPX not found, build will omit binary compression.")
+        common += [
+            "integrated_script.ui.desktop",
+            "integrated_script.ui.shared",
+            "PySide6",
+            "PySide6.QtCore",
+            "PySide6.QtGui",
+            "PySide6.QtWidgets",
+            "PySide6.QtSvg",
+        ]
+    return common
 
-    clean_enabled = os.environ.get("PYINSTALLER_CLEAN", "1").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-    }
 
-    strip_enabled = os.name != "nt" and not is_arm64
-    if os.name != "nt" and is_arm64:
-        print("Notice: ARM64 build disables --strip.")
-    if strip_enabled:
-        print("Notice: --strip enabled.")
+def build_command(target: BuildTarget, root: Path, *, clean: bool = True) -> List[str]:
+    """构造调用 PyInstaller 的完整命令（可测试、无副作用）。"""
+    # PyInstaller 在 --distpath 下以 --name 建目录；dist/<name> 即产物目录。
+    target.output_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = root / "build" / target.mode
+    work_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd_parts = [
+    command: List[str] = [
         sys.executable,
         "-m",
         "PyInstaller",
         "--noconfirm",
-        "--onefile",
-        "--console",
-        "--name=integrated_script",
+        "--onedir",
+        "--console" if target.console else "--windowed",
+        f"--name={target.name}",
         "--distpath",
-        str(project_root / "dist"),
+        str(target.output_dir.parent),
         "--workpath",
-        str(project_root / "build"),
+        str(work_dir),
+        "--specpath",
+        str(work_dir),
+        "--paths",
+        str(root / "src"),
     ]
-    cmd_parts = [part for part in cmd_parts if part]
-    if strip_enabled:
-        cmd_parts.append("--strip")
-    if clean_enabled:
-        cmd_parts.append("--clean")
-    cmd_parts += upx_args
+    if clean:
+        command.append("--clean")
 
-    cmd_parts += ["--paths", str(project_root / "src")]
+    if platform.machine().lower() in {"aarch64", "arm64"}:
+        command.append("--noupx")
 
-    for data in add_data:
-        cmd_parts += ["--add-data", data]
+    excludes = list(_COMMON_EXCLUDES) + list(target.extra_excludes)
+    # 注意：不排除 numpy —— 图像处理（processors/image/core.py）在模块顶层导入它，
+    # 排除会导致图像处理功能在离线产物中静默失效。
+    for module in excludes:
+        command += ["--exclude-module", module]
 
-    for module in hidden_imports:
-        cmd_parts += ["--hidden-import", module]
+    for module in collect_hidden_imports(target):
+        command += ["--hidden-import", module]
 
-    cmd_parts += collect_args
+    command.append("--collect-submodules=integrated_script")
+    command.append("--collect-data=integrated_script")
+    # 携带包元数据，使冻结产物无论放在哪都能通过 importlib.metadata 读到真实版本号
+    # （否则 version.py 回退为 0.0.0）。
+    command.append("--copy-metadata=integrated-script")
+    for package in target.collect_all:
+        command.append(f"--collect-all={package}")
 
-    for module in exclude_modules:
-        cmd_parts += ["--exclude-module", module]
+    for data in collect_add_data(root):
+        command += ["--add-data", data]
 
-    cmd_parts.append(str(main_script))
+    icon = root / "src" / "integrated_script" / "assets" / "app.ico"
+    if icon.exists():
+        command += ["--icon", str(icon)]
+
+    command.append(str(target.entry))
+    return command
+
+
+def _pyinstaller_available() -> bool:
+    return importlib.util.find_spec("PyInstaller") is not None
+
+
+_FORBIDDEN_ARTIFACT_PARTS = (
+    "tests",
+    "fake_service",
+    "generate_screenshots",
+    "design",
+)
+
+
+def verify_dist(target: BuildTarget) -> List[str]:
+    """检查产物目录，返回问题列表（空表示通过）。"""
+    problems: List[str] = []
+    if not target.output_dir.is_dir():
+        return [f"产物目录不存在: {target.output_dir}"]
+    if not target.executable_path.exists():
+        problems.append(f"未找到可执行文件: {target.executable_path}")
+
+    text_suffixes = {".py", ".pyi"}
+    image_suffixes = {".png", ".jpg", ".jpeg"}
+    bundled = [
+        path
+        for path in target.output_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in text_suffixes | image_suffixes
+    ]
+    for path in bundled:
+        relative = path.relative_to(target.output_dir)
+        lowered = str(relative).lower()
+        parts = {part.lower() for part in relative.parts}
+        if "tests" in parts:
+            problems.append(f"测试代码被打入产物: {relative}")
+        for forbidden in _FORBIDDEN_ARTIFACT_PARTS:
+            if forbidden in lowered and forbidden not in {"tests", "design"}:
+                problems.append(f"测试/截图脚本被打入产物: {relative}")
+        if "design" in parts and path.suffix.lower() in image_suffixes:
+            problems.append(f"设计截图被打入产物: {relative}")
+
+    if target.mode == "tui":
+        for qt_marker in ("PySide6", "shiboken6", "Qt6Core", "Qt6Widgets"):
+            match = next(
+                (
+                    path
+                    for path in target.output_dir.rglob(f"*{qt_marker}*")
+                    if path.is_file()
+                ),
+                None,
+            )
+            if match is not None:
+                problems.append(
+                    f"TUI 产物包含 Qt 组件: {match.relative_to(target.output_dir)}"
+                )
+    return problems
+
+
+def _run_target(target: BuildTarget, root: Path, *, clean: bool = True) -> bool:
+    if not target.entry.exists():
+        print(f"错误: 找不到启动器入口 {target.entry}")
+        return False
+
+    command = build_command(target, root, clean=clean)
+    try:
+        display = shlex.join(command)
+    except AttributeError:  # pragma: no cover - 旧 Python
+        display = " ".join(shlex.quote(part) for part in command)
+    print(f"[{target.mode}] 执行: {display}")
 
     try:
-        command_display = shlex.join(cmd_parts)
-    except AttributeError:
-        command_display = " ".join(shlex.quote(part) for part in cmd_parts)
-    print(f"Executing command: {command_display}")
-    try:
-        result = subprocess.run(cmd_parts)
+        result = subprocess.run(command, cwd=str(root))
     except FileNotFoundError:
-        print("Build failed: Python executable disappeared from PATH.")
+        print("构建失败: 当前解释器不可用。")
         return False
 
-    if result.returncode == 0:
-        exe_name = "integrated_script.exe" if os.name == "nt" else "integrated_script"
-        exe_path = project_root / "dist" / exe_name
-        if exe_path.exists():
-            print("\nBuild successful!")
-            print(f"Executable location: {exe_path}")
-            print(f"File size: {exe_path.stat().st_size / 1024 / 1024:.1f} MB")
-            return True
-        else:
-            print("Build failed: Generated exe file not found")
-            print(f"Expected location: {exe_path}")
-            return False
-    else:
-        print("Build failed: PyInstaller execution error")
+    if result.returncode != 0:
+        print(f"[{target.mode}] PyInstaller 执行失败，退出码 {result.returncode}")
         return False
+
+    problems = verify_dist(target)
+    if problems:
+        print(f"[{target.mode}] 产物校验失败：")
+        for problem in problems:
+            print(f"  - {problem}")
+        return False
+
+    size_mb = (
+        sum(
+            path.stat().st_size
+            for path in target.output_dir.rglob("*")
+            if path.is_file()
+        )
+        / 1024
+        / 1024
+    )
+    print(
+        f"[{target.mode}] 构建成功: {target.executable_path} "
+        f"(目录 {size_mb:.1f} MB, console={target.console})"
+    )
+    return True
+
+
+def create_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="build_exe.py",
+        description="构建离线自包含产物（TUI / GUI / 全部）",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default="tui",
+        help="构建目标：tui（默认）、gui 或 all",
+    )
+    parser.add_argument(
+        "--no-clean",
+        action="store_true",
+        help="复用 PyInstaller 缓存（默认 --clean）",
+    )
+    return parser
+
+
+def build_exe(mode: str = "tui", *, clean: bool = True) -> bool:
+    """按模式执行构建，返回是否全部成功。"""
+    root = PROJECT_ROOT
+    if not _pyinstaller_available():
+        lock_hint = (
+            "requirements-build-gui.txt"
+            if mode in {"gui", "all"}
+            else "requirements-build.txt"
+        )
+        print(
+            "错误: 当前解释器未安装 PyInstaller。\n"
+            f"      请安装构建依赖：pip install -r {lock_hint}"
+        )
+        return False
+
+    targets = resolve_targets(mode)
+    print(
+        f"构建机器: {platform.machine()} | Python {platform.python_version()} | 模式 {mode}"
+    )
+    results: Dict[str, bool] = {}
+    for target in targets:
+        if target.output_dir.exists():
+            try:
+                shutil.rmtree(target.output_dir)
+            except PermissionError:
+                print(f"[{target.mode}] 警告: 无法删除旧产物目录，继续构建。")
+        results[target.mode] = _run_target(target, root, clean=clean)
+
+    return all(results.values())
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    # 冻结后的多进程（图片压缩使用 ProcessPoolExecutor）必须有这一步，
+    # 且必须在解析参数/启动 Qt 之前执行，否则子进程会重复启动整个界面。
+    multiprocessing.freeze_support()
+
+    parser = create_argument_parser()
+    args = parser.parse_args(argv)
+    success = build_exe(args.mode, clean=not args.no_clean)
+    if success:
+        print("\n构建完成。")
+        return 0
+    print("\n构建失败。")
+    return 1
 
 
 if __name__ == "__main__":
-    print("Building integrated_script project...")
-    success = build_exe()
-    if success:
-        print("\nBuild completed successfully!")
-    else:
-        print("\nBuild failed!")
-        sys.exit(1)
+    sys.exit(main())

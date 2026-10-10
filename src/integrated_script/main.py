@@ -5,7 +5,8 @@ main.py
 
 主程序入口
 
-提供交互式运行模式与打包入口。
+默认启动 Textual 终端界面；``--legacy-cli`` 使用旧交互式界面；
+``--build`` 调用打包脚本。GUI 使用独立的 console-free 入口``gui_main``。
 """
 
 import subprocess
@@ -15,6 +16,7 @@ from typing import List, Optional
 
 from .config import ConfigManager
 from .core.logging_config import get_logger, setup_logging
+from .core.windows_compat import setup_console_encoding
 from .ui.interactive import InteractiveInterface
 from .version import get_version
 
@@ -66,7 +68,26 @@ def setup_argument_parser():
         "--build", action="store_true", help="调用根目录的build_exe.py进行打包"
     )
 
+    parser.add_argument(
+        "--legacy-cli",
+        action="store_true",
+        help="使用旧的交互式命令行界面（兼容回退）",
+    )
+
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="直接启动 Qt 桌面界面",
+    )
+
     return parser
+
+
+def default_log_dir() -> str:
+    """解析默认日志目录（用户可写目录，而不是安装目录）。"""
+    from .application.paths import AppPaths
+
+    return str(AppPaths.resolve().log_dir)
 
 
 def setup_logging_from_args(args) -> None:
@@ -75,6 +96,9 @@ def setup_logging_from_args(args) -> None:
     Args:
         args: 命令行参数
     """
+    # 冻结 GUI 可能只有 stderr 管道，环境变量不能重配已经创建的标准流。
+    setup_console_encoding()
+
     # 确定日志级别
     log_level = args.log_level
     if args.quiet:
@@ -82,11 +106,12 @@ def setup_logging_from_args(args) -> None:
     elif args.verbose:
         log_level = "DEBUG"
 
-    # 设置日志
-    log_dir = "logs"
+    # 设置日志：显式 --log-file 优先，否则写入用户可写日志目录，
+    # 避免在只读安装目录（打包态）写入日志。
     if args.log_file:
-        # 如果指定了日志文件，使用其目录作为日志目录
         log_dir = str(Path(args.log_file).parent)
+    else:
+        log_dir = default_log_dir()
 
     setup_logging(log_dir=log_dir, log_level=log_level, enable_error_file=True)
 
@@ -116,7 +141,7 @@ def load_config_from_args(args) -> ConfigManager:
 
 
 def run_interactive_mode(config_manager: ConfigManager) -> int:
-    """运行交互式模式
+    """运行旧的交互式命令行模式（兼容回退）。
 
     Args:
         config_manager: 配置管理器
@@ -134,6 +159,85 @@ def run_interactive_mode(config_manager: ConfigManager) -> int:
     except Exception as e:
         logger = get_logger(__name__)
         logger.error(f"交互式模式运行失败: {e}")
+        return 1
+
+
+def run_tui_mode(
+    config_manager: Optional[ConfigManager], working_directory: Path
+) -> int:
+    """运行 Textual 终端界面（默认入口，惰性导入）。"""
+    try:
+        from .application import AppService
+        from .ui.tui.app import run_tui
+    except ImportError as e:
+        logger = get_logger(__name__)
+        logger.error(f"无法加载终端界面: {e}")
+        print("错误: 当前安装缺少 Textual 终端界面组件，可使用 --legacy-cli 回退。")
+        return 1
+
+    service = AppService(config=config_manager, working_directory=working_directory)
+    try:
+        return int(run_tui(service))
+    except KeyboardInterrupt:
+        return 130
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.error(f"终端界面运行失败: {e}")
+        return 1
+    finally:
+        _safe_close(service)
+
+
+def run_gui_mode(
+    config_manager: Optional[ConfigManager], working_directory: Path
+) -> int:
+    """运行 Qt 桌面界面（独立 console-free 入口，惰性导入）。"""
+    try:
+        from .application import AppService
+        from .ui.desktop.app import run_gui
+    except ImportError as e:
+        logger = get_logger(__name__)
+        logger.error(f"无法加载桌面界面: {e}")
+        print("错误: 当前安装缺少 Qt 桌面界面组件。")
+        return 1
+
+    service = AppService(config=config_manager, working_directory=working_directory)
+    try:
+        return int(run_gui(service))
+    except KeyboardInterrupt:
+        return 130
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.error(f"桌面界面运行失败: {e}")
+        return 1
+    finally:
+        _safe_close(service)
+
+
+def _safe_close(service) -> None:
+    try:
+        service.close()
+    except Exception:  # noqa: BLE001 - 关闭失败不应影响退出码
+        pass
+
+
+def gui_main(argv: Optional[List[str]] = None) -> int:
+    """独立的 GUI 入口（Windows 下 console-free）。
+
+    与 ``main`` 共享参数解析与配置加载，但默认启动 Qt 界面，便于打包为
+    无控制台窗口的可执行文件。
+    """
+    parser = setup_argument_parser()
+    args = parser.parse_args(argv)
+    setup_logging_from_args(args)
+    logger = get_logger(__name__)
+
+    try:
+        config_manager = load_config_from_args(args) if args.config else None
+        logger.info("启动桌面界面")
+        return run_gui_mode(config_manager, Path.cwd())
+    except Exception as e:
+        logger.error(f"程序运行失败: {e}")
         return 1
 
 
@@ -223,12 +327,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             logger.info("启动打包模式")
             return run_build_mode()
 
-        # 加载配置
-        config_manager = load_config_from_args(args)
+        # 仅显式 --config 时预先加载指定配置；默认 GUI/TUI 由应用层
+        # 解析用户目录配置，避免在 cwd 创建 config.json。
+        config_manager = load_config_from_args(args) if args.config else None
 
-        # 交互式模式
-        logger.info("启动交互式模式")
-        return run_interactive_mode(config_manager)
+        # 旧交互式命令行回退（保持旧的 cwd 配置语义）
+        if getattr(args, "legacy_cli", False):
+            logger.info("启动旧交互式命令行模式")
+            if config_manager is None:
+                config_manager = ConfigManager()
+            return run_interactive_mode(config_manager)
+
+        # Qt 桌面界面
+        if getattr(args, "gui", False):
+            logger.info("启动桌面界面")
+            return run_gui_mode(config_manager, Path.cwd())
+
+        # 默认终端界面
+        logger.info("启动终端界面")
+        return run_tui_mode(config_manager, Path.cwd())
 
     except Exception as e:
         logger.error(f"程序运行失败: {e}")

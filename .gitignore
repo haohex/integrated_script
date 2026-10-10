@@ -254,6 +254,10 @@ config/production_config.yaml
 *.flv
 *.mkv
 
+# Checked-in application assets and visual verification samples
+!src/integrated_script/assets/*.png
+!docs/design/screenshots/*.png
+
 # Documentation build
 docs/build/
 docs/_build/

@@ -1,12 +1,23 @@
-# Integrated Script Project Dependencies
-# Install with: pip install -r requirements.txt
+# Integrated Script 运行期依赖（宽松版本约束）
+#
+# 说明：
+#   - 本文件只包含“运行产品所需”的依赖，不含 Qt 桌面界面（见 [gui] extra）。
+#   - 需要可复现的精确锁定版本请使用 requirements-runtime.txt。
+#   - 构建离线可执行文件请使用 requirements-build.txt。
+#   - 开发/界面测试请使用 requirements-dev.txt。
+#
+# 安装：pip install -r requirements.txt
 
-# Core dependencies
-tqdm>=4.64.0          # Progress bars
-Pillow>=9.0.0         # Image processing
-opencv-python-headless>=4.5.0  # Computer vision (headless)
-PyYAML>=6.0           # YAML configuration support
-requests>=2.28.0      # HTTP requests for GitHub API
-uuid>=1.30            # Unique ID generation
-# Note: Optional dependencies (numpy, pandas, matplotlib) are defined in pyproject.toml
-# Install with: pip install -e .[optional] for optional dependencies
+# 运行期核心（语义与 pyproject.toml [project.dependencies] 保持一致）
+tqdm>=4.64.0                  # 进度条
+Pillow>=9.0.0                 # 图像处理
+opencv-python-headless>=4.5.0 # 计算机视觉（无 GUI 后端）
+PyYAML>=6.0                   # YAML 配置
+requests>=2.28.0              # HTTP 请求（GitHub API）
+platformdirs>=4.0.0           # 用户配置/日志/缓存目录
+textual>=8.0,<9               # 默认终端界面（TUI）
+
+# 可选依赖（numpy / pandas / matplotlib）见 pyproject.toml 的 [optional] extra：
+#   pip install -e .[optional]
+# Qt 桌面界面为显式可选组件：
+#   pip install -e .[gui]

@@ -3674,18 +3674,23 @@ image:
         required: bool = False,
         allow_space_empty: bool = False,
     ) -> str:
-        """获取用户输入"""
+        """获取用户输入
+
+        使用 ``self.input_func`` 读取输入，默认是内置 ``input``。子类或
+        适配器可以注入其它读取方式（例如在终端控件中回填输入）。
+        """
+        read_input = getattr(self, "input_func", input)
         while True:
             try:
                 if default:
-                    raw_input = input(f"{prompt}[{default}] ")
+                    raw_input = read_input(f"{prompt}[{default}] ")
                     if raw_input.strip() == "":
                         if allow_space_empty and raw_input != "":
                             return ""
                         return default
                     user_input = raw_input.strip()
                 else:
-                    raw_input = input(prompt)
+                    raw_input = read_input(prompt)
                     if (
                         allow_space_empty
                         and raw_input != ""

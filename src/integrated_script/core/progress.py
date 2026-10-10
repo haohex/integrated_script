@@ -8,6 +8,7 @@ progress.py
 提供进度条显示、进度跟踪和上下文管理功能。
 """
 
+import threading
 import time
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator, List, Optional
@@ -71,6 +72,203 @@ tqdm = _tqdm
 logger = get_logger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# 进度事件接收器（progress sink）
+#
+# 应用层（GUI/TUI）在后台线程执行操作时注册 sink，core 层的进度不再写入终端，
+# 而是转换为结构化事件；未注册 sink 时保持原有终端 tqdm 行为完全不变。
+# 这里不做全局 stdout 重定向，只提供显式注册点。
+# ---------------------------------------------------------------------------
+
+_sink_lock = threading.RLock()
+_active_sink: Optional[Any] = None
+
+
+def set_progress_sink(sink: Optional[Any]) -> None:
+    """注册当前活动进度接收器（None 表示恢复终端进度）。"""
+    global _active_sink
+    with _sink_lock:
+        _active_sink = sink
+
+
+def get_progress_sink() -> Optional[Any]:
+    """返回当前活动进度接收器，未注册时返回 None。"""
+    with _sink_lock:
+        return _active_sink
+
+
+@contextmanager
+def progress_sink(sink: Optional[Any]) -> Iterator[Optional[Any]]:
+    """在上下文中临时注册进度接收器，退出时恢复之前的接收器。"""
+    global _active_sink
+    with _sink_lock:
+        previous = _active_sink
+        _active_sink = sink
+    try:
+        yield sink
+    finally:
+        with _sink_lock:
+            _active_sink = previous
+
+
+def _notify_sink(sink: Optional[Any], method: str, *args: Any) -> None:
+    """安全地向 sink 派发事件，接收器异常不得影响处理流程。"""
+    if sink is None:
+        return
+    handler = getattr(sink, method, None)
+    if handler is None:
+        return
+    try:
+        handler(*args)
+    except Exception as exc:  # pragma: no cover - 接收器问题不应中断处理
+        logger.debug("进度接收器 %s 调用失败: %s", method, exc)
+
+
+class _SinkBar:
+    """将 tqdm 风格进度条调用转发给 sink 的轻量对象。"""
+
+    def __init__(
+        self,
+        sink: Any,
+        total: Optional[int] = None,
+        description: str = "",
+        unit: str = "item",
+    ) -> None:
+        self._sink = sink
+        self.total = total or 0
+        self.n = 0
+        self.description = description
+        self.unit = unit
+        _notify_sink(sink, "progress_started", description, self.total, unit)
+
+    def update(self, n: int = 1) -> None:
+        self.n += n
+        _notify_sink(
+            self._sink, "progress_updated", self.n, self.total, self.description
+        )
+
+    def set_description(self, description: Optional[str] = None, refresh: bool = True):
+        _ = refresh
+        self.description = description or ""
+        _notify_sink(
+            self._sink, "progress_updated", self.n, self.total, self.description
+        )
+
+    def set_postfix(
+        self, ordered_dict: Optional[dict] = None, refresh: bool = True, **kwargs: Any
+    ) -> None:
+        _ = refresh
+        values = dict(ordered_dict or {})
+        values.update(kwargs)
+        _notify_sink(self._sink, "progress_postfix", values)
+
+    def close(self) -> None:
+        _notify_sink(self._sink, "progress_closed", self.n, self.total)
+
+    def __enter__(self) -> "_SinkBar":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+
+class _SinkIterable:
+    """将可迭代对象的逐项进度转发给 sink，替代直接实例化 tqdm 的场景。"""
+
+    def __init__(
+        self,
+        sink: Any,
+        iterable: Any,
+        total: Optional[int] = None,
+        description: str = "",
+        unit: str = "item",
+    ) -> None:
+        self._sink = sink
+        self._iterable = iterable
+        self.total = total if total is not None else _safe_len(iterable)
+        self.n = 0
+        self.description = description
+        self.unit = unit
+
+    def __iter__(self) -> Iterator[Any]:
+        _notify_sink(
+            self._sink, "progress_started", self.description, self.total, self.unit
+        )
+        for item in self._iterable:
+            yield item
+            self.n += 1
+            _notify_sink(
+                self._sink, "progress_updated", self.n, self.total, self.description
+            )
+        _notify_sink(self._sink, "progress_closed", self.n, self.total)
+
+    def update(self, n: int = 1) -> None:
+        self.n += n
+        _notify_sink(
+            self._sink, "progress_updated", self.n, self.total, self.description
+        )
+
+    def set_description(self, description: Optional[str] = None, refresh: bool = True):
+        _ = refresh
+        self.description = description or ""
+
+    def set_postfix(
+        self, ordered_dict: Optional[dict] = None, refresh: bool = True, **kwargs: Any
+    ) -> None:
+        _ = refresh
+        values = dict(ordered_dict or {})
+        values.update(kwargs)
+        _notify_sink(self._sink, "progress_postfix", values)
+
+    def close(self) -> None:
+        _notify_sink(self._sink, "progress_closed", self.n, self.total)
+
+
+class _FallbackIterable:
+    """tqdm 不可用且没有 sink 时的降级包装：仅保留原有 print 行为标记。"""
+
+    def __init__(self, iterable: Any) -> None:
+        self._iterable = iterable
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._iterable)
+
+
+def _safe_len(iterable: Any) -> int:
+    try:
+        return len(iterable)  # type: ignore[arg-type]
+    except TypeError:
+        return 0
+
+
+def create_progress_bar(
+    total: Optional[int] = None,
+    description: str = "",
+    unit: str = "item",
+    **kwargs: Any,
+) -> Any:
+    """创建进度条：有 sink 时返回事件转发对象，否则返回真实 tqdm。"""
+    sink = get_progress_sink()
+    if sink is not None:
+        return _SinkBar(sink, total, description, unit)
+    return tqdm(total=total, desc=description, unit=unit, **kwargs)
+
+
+def iterate_with_progress(
+    iterable: Any,
+    total: Optional[int] = None,
+    description: str = "",
+    unit: str = "item",
+) -> Any:
+    """带进度的迭代：sink 优先，其次 tqdm，最后原样返回。"""
+    sink = get_progress_sink()
+    if sink is not None:
+        return _SinkIterable(sink, iterable, total, description, unit)
+    if TQDM_AVAILABLE:
+        return tqdm(iterable, desc=description, unit=unit, total=total)
+    return _FallbackIterable(iterable)
+
+
 class ProgressManager:
     """进度管理器
 
@@ -88,7 +286,7 @@ class ProgressManager:
             show_progress: 是否显示进度条
         """
         self.show_progress = show_progress
-        self.progress_bar = None
+        self.progress_bar: Optional[Any] = None
         self._start_time: Optional[float] = None
         self._total_items = 0
         self._processed_items = 0
@@ -113,6 +311,12 @@ class ProgressManager:
         self._total_items = total
         self._processed_items = 0
         self._start_time = time.time()
+
+        sink = get_progress_sink()
+        if sink is not None:
+            self.progress_bar = _SinkBar(sink, total, description, unit)
+            logger.debug(f"创建进度接收器: {description} (总计: {total})")
+            return self.progress_bar
 
         try:
             self.progress_bar = tqdm(
