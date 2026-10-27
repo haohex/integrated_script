@@ -405,8 +405,10 @@ TODO.md
 NOTES.md
 scratch.*
 debug.*
-AGENTS.md
-CLAUDE.md
-.claude/
 .context/
 example_data/
+
+# AI 协作：任务卡、个人设置和本地 uv 锁文件不入库
+.dispatch/
+.claude/settings.local.json
+uv.lock
