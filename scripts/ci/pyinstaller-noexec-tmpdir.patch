@@ -1,0 +1,87 @@
+--- a/bootloader/src/pyi_utils_posix.c
++++ b/bootloader/src/pyi_utils_posix.c
+@@ -30,6 +30,7 @@
+ #include <errno.h>
+ #include <signal.h> /* kill */
+ #include <sys/stat.h> /* struct stat */
++#include <sys/statvfs.h> /* statvfs, ST_NOEXEC */
+ #include <sys/wait.h>
+ 
+ #if defined(PYI_USE_POSIX_SEMAPHORE)
+@@ -177,6 +178,31 @@
+ }
+ 
+ 
++/* integrated_script patch: check whether programs can be executed from the
++ * given directory. Candidate temporary directories on a file system mounted
++ * with noexec (e.g., a hardened /tmp) are skipped, because the extracted
++ * shared libraries could not be mapped from there. If the mount flags cannot
++ * be queried, the directory is assumed to be usable. */
++static int
++_pyi_dir_allows_exec(const char *dir_path)
++{
++#if defined(__linux__)
++    #ifndef ST_NOEXEC
++        #define ST_NOEXEC 8
++    #endif
++    struct statvfs fs_info;
++
++    if (statvfs(dir_path, &fs_info) != 0) {
++        return 1;
++    }
++    if (fs_info.f_flag & ST_NOEXEC) {
++        PYI_DEBUG("LOADER: skipping temporary directory on noexec file system: %s\n", dir_path);
++        return 0;
++    }
++#endif
++    return 1;
++}
++
+ /* Append the _MEIXXXXXX string to the temporary directory path template,
+  * and try creating the temporary directory. */
+ static int
+@@ -272,6 +298,10 @@
+             continue;
+         }
+ 
++        if (!_pyi_dir_allows_exec(pyi_ctx->application_home_dir)) {
++            continue;
++        }
++
+         if (_pyi_format_and_create_tmpdir(pyi_ctx->application_home_dir) == 0) {
+             return 0;
+         }
+@@ -280,11 +310,33 @@
+     /* Check the standard temporary directory paths */
+     for (i = 0; i < sizeof(candidate_tmp_dirs)/sizeof(candidate_tmp_dirs[0]); i++) {
+          snprintf(pyi_ctx->application_home_dir, PYI_PATH_MAX, "%s", candidate_tmp_dirs[i]);
++         if (!_pyi_dir_allows_exec(pyi_ctx->application_home_dir)) {
++            continue;
++         }
+          if (_pyi_format_and_create_tmpdir(pyi_ctx->application_home_dir) == 0) {
+             return 0;
+         }
+     }
+ 
++    /* integrated_script patch: last resort, $HOME/.cache (created if missing),
++     * for systems where all standard temporary directories are noexec. */
++    {
++        char *home_dir = pyi_getenv("HOME");
++        int ret;
++
++        if (home_dir != NULL) {
++            ret = snprintf(pyi_ctx->application_home_dir, PYI_PATH_MAX, "%s/.cache", home_dir);
++            free(home_dir);
++            if (ret > 0 && ret < PYI_PATH_MAX) {
++                mkdir(pyi_ctx->application_home_dir, 0700);
++                if (_pyi_dir_allows_exec(pyi_ctx->application_home_dir)
++                    && _pyi_format_and_create_tmpdir(pyi_ctx->application_home_dir) == 0) {
++                    return 0;
++                }
++            }
++        }
++    }
++
+     return -1; /* No suitable location found */
+ }
+ 

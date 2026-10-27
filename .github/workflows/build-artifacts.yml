@@ -57,7 +57,7 @@ jobs:
         UV_CACHE_DIR: .cache/uv
       run: |
         uv venv --python "$(python -c 'import sys; print(sys.executable)')" .build-venv
-        uv pip install --python .build-venv --only-binary :all: -r requirements.txt pyinstaller
+        uv pip install --python .build-venv --only-binary :all: -r requirements.txt -r scripts/ci/build-requirements.txt
         uv pip list --python .build-venv
         .build-venv/Scripts/python build_exe.py
 
@@ -91,9 +91,17 @@ jobs:
       if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        docker run --rm -v "$PWD:/work" -w /work \
-          ${{ matrix.smoke_image }} \
-          bash scripts/ci/smoke_test.sh "${{ steps.rename.outputs.path }}"
+        # 依次验证：正常 /tmp；/tmp 为 noexec（应改用 /var/tmp）；
+        # /tmp 和 /var/tmp 都为 noexec（应回退到 $HOME/.cache）。
+        for tmpfs_args in "" \
+            "--tmpfs /tmp:rw,noexec,nosuid" \
+            "--tmpfs /tmp:rw,noexec,nosuid --tmpfs /var/tmp:rw,noexec,nosuid"; do
+          echo "::group::smoke test ${tmpfs_args:-(default /tmp)}"
+          docker run --rm -v "$PWD:/work" -w /work $tmpfs_args \
+            ${{ matrix.smoke_image }} \
+            bash scripts/ci/smoke_test.sh "${{ steps.rename.outputs.path }}"
+          echo "::endgroup::"
+        done
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
