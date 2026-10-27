@@ -19,33 +19,34 @@ jobs:
             python_cmd: python
             exe_name: integrated_script.exe
             out_name: integrated_script-${{ github.ref_name }}-windows-amd64.exe
-          - name: linux-amd64
-            runner: ubuntu-latest
-            setup_python: false
-            checkout_clean: true
-            use_container: true
-            container_image: ghcr.io/luohao830/integrated_script-build:py39
-            container_python: /opt/venv/bin/python
-            container_platform: linux/amd64
-            docker_cmd: docker
-            install_deps: false
-            exe_name: integrated_script
-            out_name: integrated_script-${{ github.ref_name }}-linux-amd64
-          - name: linux-arm64
-            runner:
-              - self-hosted
-              - Linux
-              - ARM64
-            setup_python: false
-            checkout_clean: false
-            use_container: true
-            container_image: ghcr.io/luohao830/integrated_script-build:py39
-            container_python: /opt/venv/bin/python
-            container_platform: linux/arm64
-            docker_cmd: sudo docker
-            install_deps: false
-            exe_name: integrated_script
-            out_name: integrated_script-${{ github.ref_name }}-linux-arm64
+          # Linux 构建暂时屏蔽：ghcr.io/luohao830 构建镜像在 haohex 仓库下拉取被拒（denied），恢复时取消以下注释。
+          # - name: linux-amd64
+          #   runner: ubuntu-latest
+          #   setup_python: false
+          #   checkout_clean: true
+          #   use_container: true
+          #   container_image: ghcr.io/luohao830/integrated_script-build:py39
+          #   container_python: /opt/venv/bin/python
+          #   container_platform: linux/amd64
+          #   docker_cmd: docker
+          #   install_deps: false
+          #   exe_name: integrated_script
+          #   out_name: integrated_script-${{ github.ref_name }}-linux-amd64
+          # - name: linux-arm64
+          #   runner:
+          #     - self-hosted
+          #     - Linux
+          #     - ARM64
+          #   setup_python: false
+          #   checkout_clean: false
+          #   use_container: true
+          #   container_image: ghcr.io/luohao830/integrated_script-build:py39
+          #   container_python: /opt/venv/bin/python
+          #   container_platform: linux/arm64
+          #   docker_cmd: sudo docker
+          #   install_deps: false
+          #   exe_name: integrated_script
+          #   out_name: integrated_script-${{ github.ref_name }}-linux-arm64
 
     steps:
     - uses: actions/checkout@v4

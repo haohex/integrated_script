@@ -232,8 +232,6 @@ jobs:
       with:
         files: |
           dist/windows-amd64/integrated_script-${{ github.ref_name }}-windows-amd64.exe
-          dist/linux-amd64/integrated_script-${{ github.ref_name }}-linux-amd64
-          dist/linux-arm64/integrated_script-${{ github.ref_name }}-linux-arm64
         body_path: release_body.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
