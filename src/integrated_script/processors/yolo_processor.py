@@ -44,6 +44,7 @@ from .yolo import (
     scan_xlabel_dataset_recursive,
     validate_classes_consistency_internal,
 )
+from .yolo.merge import detect_name_conflicts_internal
 
 
 class YOLOProcessor(DatasetProcessor):
@@ -1275,12 +1276,16 @@ class YOLOProcessor(DatasetProcessor):
             self.logger.error(f"OpenCV图像转换失败: {str(e)}")
             raise
 
+    def detect_name_conflicts(self, dataset_paths: List[Path]) -> Dict[str, Any]:
+        """检测待合并图片的名称冲突。"""
+        return detect_name_conflicts_internal(self, dataset_paths)
+
     def merge_datasets(
         self,
         dataset_paths: List[str],
         output_path: str,
         output_name: Optional[str] = None,
-        image_prefix: str = "img",
+        image_prefix: Optional[str] = None,
     ) -> Dict[str, Any]:
         """合并多个YOLO数据集。"""
         return merge_datasets_internal(
@@ -1296,7 +1301,7 @@ class YOLOProcessor(DatasetProcessor):
         dataset_paths: List[str],
         output_path: str,
         output_name: Optional[str] = None,
-        image_prefix: str = "img",
+        image_prefix: Optional[str] = None,
         dataset_order: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """合并多个不同类型的YOLO数据集。"""
@@ -1339,7 +1344,7 @@ class YOLOProcessor(DatasetProcessor):
         self,
         dataset_paths: List[Path],
         output_dir: Path,
-        image_prefix: str,
+        image_prefix: Optional[str],
         unified_classes: List[str],
         class_mappings: List[Dict[int, int]],
         pre_scanned_images: Optional[List[List[Path]]] = None,
@@ -1415,7 +1420,11 @@ class YOLOProcessor(DatasetProcessor):
             for image_file in image_files:
                 try:
                     # 生成新的文件名
-                    new_name = f"{image_prefix}_{current_index:05d}{image_file.suffix}"
+                    new_name = (
+                        image_file.name
+                        if image_prefix is None
+                        else f"{image_prefix}_{current_index:05d}{image_file.suffix}"
+                    )
                     new_image_path = images_dir / new_name
 
                     # 复制图像文件
@@ -1426,7 +1435,11 @@ class YOLOProcessor(DatasetProcessor):
                     stem = image_file.stem
                     if stem in label_mapping:
                         label_file = label_mapping[stem]
-                        new_label_name = f"{image_prefix}_{current_index:05d}.txt"
+                        new_label_name = (
+                            label_file.name
+                            if image_prefix is None
+                            else f"{image_prefix}_{current_index:05d}.txt"
+                        )
                         new_label_path = labels_dir / new_label_name
 
                         # 复制并转换标签文件
@@ -1538,7 +1551,7 @@ class YOLOProcessor(DatasetProcessor):
         self,
         dataset_paths: List[Path],
         output_dir: Path,
-        image_prefix: str,
+        image_prefix: Optional[str],
         classes: List[str],
         pre_scanned_images: Optional[List[List[Path]]] = None,
     ) -> Dict[str, Any]:
@@ -1742,7 +1755,7 @@ class YOLOProcessor(DatasetProcessor):
         image_files: List[Path],
         images_dir: Path,
         labels_dir: Path,
-        image_prefix: str,
+        image_prefix: Optional[str],
         start_index: int,
         label_mapping: Dict[str, Path],
         dataset_num: int,

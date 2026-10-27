@@ -173,6 +173,13 @@ class YoloWorkflow:
             normalized = self._normalize_error(error)
             return self._legacy_failure(normalized)
 
+    def detect_name_conflicts(self, dataset_paths: List[Any]) -> Dict[str, Any]:
+        try:
+            return self.processor.detect_name_conflicts(dataset_paths)
+        except Exception as error:  # noqa: BLE001
+            normalized = self._normalize_error(error)
+            return self._legacy_failure(normalized)
+
     def validate_classes_consistency(self, dataset_paths: List[Any]) -> Dict[str, Any]:
         try:
             legacy_result = self.processor._validate_classes_consistency(dataset_paths)

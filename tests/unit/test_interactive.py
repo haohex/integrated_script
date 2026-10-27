@@ -1099,6 +1099,9 @@ def test_yolo_merge_datasets_uses_yolo_workflow_adapter(
     interface_with_non_exe, monkeypatch, tmp_path
 ) -> None:
     class _WorkflowForMerge:
+        def detect_name_conflicts(self, dataset_paths):
+            return {"has_conflict": False, "conflict_count": 0, "examples": []}
+
         instances: List["_WorkflowForMerge"] = []
 
         def __init__(self, processor: Any) -> None:
@@ -1147,7 +1150,7 @@ def test_yolo_merge_datasets_uses_yolo_workflow_adapter(
     d2.mkdir()
 
     marker_processor = object()
-    inputs = iter([str(d1), str(d2), "", "", "", "", "y"])
+    inputs = iter([str(d1), str(d2), "", "", "", "y"])
 
     monkeypatch.setattr(
         "integrated_script.ui.interactive.YoloWorkflow", _WorkflowForMerge
@@ -1173,6 +1176,9 @@ def test_yolo_merge_different_datasets_uses_yolo_workflow_adapter(
     interface_with_non_exe, monkeypatch, tmp_path
 ) -> None:
     class _WorkflowForDiffMerge:
+        def detect_name_conflicts(self, dataset_paths):
+            return {"has_conflict": False, "conflict_count": 0, "examples": []}
+
         instances: List["_WorkflowForDiffMerge"] = []
 
         def __init__(self, processor: Any) -> None:
@@ -1235,7 +1241,7 @@ def test_yolo_merge_different_datasets_uses_yolo_workflow_adapter(
     d2.mkdir()
 
     marker_processor = object()
-    inputs = iter([str(d1), str(d2), "", "n", "", "", "", "y"])
+    inputs = iter([str(d1), str(d2), "", "n", "", "", "y"])
 
     monkeypatch.setattr(
         "integrated_script.ui.interactive.YoloWorkflow", _WorkflowForDiffMerge
@@ -1595,6 +1601,9 @@ def test_yolo_merge_datasets_uses_yes_no_helper_with_expected_defaults(
     interface_with_non_exe, monkeypatch, tmp_path
 ) -> None:
     class _WorkflowForMergeConfirm:
+        def detect_name_conflicts(self, dataset_paths):
+            return {"has_conflict": False, "conflict_count": 0, "examples": []}
+
         def __init__(self, _processor: Any) -> None:
             pass
 
@@ -1654,6 +1663,9 @@ def test_yolo_merge_different_datasets_uses_yes_no_helper_with_expected_defaults
     interface_with_non_exe, monkeypatch, tmp_path
 ) -> None:
     class _WorkflowForDiffMergeConfirm:
+        def detect_name_conflicts(self, dataset_paths):
+            return {"has_conflict": False, "conflict_count": 0, "examples": []}
+
         def __init__(self, _processor: Any) -> None:
             pass
 

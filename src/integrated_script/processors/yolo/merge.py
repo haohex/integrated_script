@@ -19,12 +19,36 @@ if TYPE_CHECKING:
     from ..yolo_processor import YOLOProcessor
 
 
+def detect_name_conflicts_internal(
+    processor: "YOLOProcessor",
+    dataset_paths: List[Path],
+    image_manifest: Optional[List[List[Path]]] = None,
+) -> Dict[str, Any]:
+    """检测平铺输出中不区分大小写的图片 stem 冲突。"""
+    if image_manifest is None:
+        image_manifest = [
+            get_file_list(path, processor.image_extensions, recursive=True)
+            for path in dataset_paths
+        ]
+    counts: Dict[str, int] = {}
+    for images in image_manifest:
+        for image in images:
+            stem = image.stem.casefold()
+            counts[stem] = counts.get(stem, 0) + 1
+    conflicts = sorted(stem for stem, count in counts.items() if count > 1)
+    return {
+        "has_conflict": bool(conflicts),
+        "conflict_count": len(conflicts),
+        "examples": conflicts[:5],
+    }
+
+
 def merge_datasets_internal(
     processor: "YOLOProcessor",
     dataset_paths: List[str],
     output_path: str,
     output_name: Optional[str] = None,
-    image_prefix: str = "img",
+    image_prefix: Optional[str] = None,
 ) -> Dict[str, Any]:
     """合并多个YOLO数据集。"""
     try:
@@ -43,12 +67,18 @@ def merge_datasets_internal(
 
         common_classes = classes_validation["classes"]
 
-        pre_scanned_images: Optional[List[List[Path]]] = None
+        pre_scanned_images = [
+            get_file_list(dataset_path, processor.image_extensions, recursive=True)
+            for dataset_path in validated_paths
+        ]
+        conflicts = detect_name_conflicts_internal(
+            processor, validated_paths, pre_scanned_images
+        )
+        if image_prefix is None and conflicts["has_conflict"]:
+            raise DatasetError("存在文件名冲突，请指定图片前缀")
+        if image_prefix == "":
+            raise DatasetError("图片前缀不能为空字符串")
         if not output_name:
-            pre_scanned_images = [
-                get_file_list(dataset_path, processor.image_extensions, recursive=True)
-                for dataset_path in validated_paths
-            ]
             output_name = processor._generate_output_name(
                 common_classes,
                 validated_paths,
@@ -89,7 +119,7 @@ def merge_different_type_datasets_internal(
     dataset_paths: List[str],
     output_path: str,
     output_name: Optional[str] = None,
-    image_prefix: str = "img",
+    image_prefix: Optional[str] = None,
     dataset_order: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """合并多个不同类型的 YOLO 数据集。"""
@@ -114,12 +144,18 @@ def merge_different_type_datasets_internal(
             all_classes_info
         )
 
-        pre_scanned_images: Optional[List[List[Path]]] = None
+        pre_scanned_images = [
+            get_file_list(dataset_path, processor.image_extensions, recursive=True)
+            for dataset_path in validated_paths
+        ]
+        conflicts = detect_name_conflicts_internal(
+            processor, validated_paths, pre_scanned_images
+        )
+        if image_prefix is None and conflicts["has_conflict"]:
+            raise DatasetError("存在文件名冲突，请指定图片前缀")
+        if image_prefix == "":
+            raise DatasetError("图片前缀不能为空字符串")
         if not output_name:
-            pre_scanned_images = [
-                get_file_list(dataset_path, processor.image_extensions, recursive=True)
-                for dataset_path in validated_paths
-            ]
             output_name = processor._generate_different_output_name(
                 unified_classes,
                 validated_paths,
@@ -223,7 +259,7 @@ def merge_dataset_parallel_internal(
     image_files: List[Path],
     images_dir: Path,
     labels_dir: Path,
-    image_prefix: str,
+    image_prefix: Optional[str],
     start_index: int,
     label_mapping: Dict[str, Path],
     dataset_num: int,
@@ -246,7 +282,11 @@ def merge_dataset_parallel_internal(
 
         for img_file, file_index in batch_tasks:
             try:
-                new_name = f"{image_prefix}_{file_index:05d}{img_file.suffix}"
+                new_name = (
+                    img_file.name
+                    if image_prefix is None
+                    else f"{image_prefix}_{file_index:05d}{img_file.suffix}"
+                )
                 new_img_path = images_dir / new_name
                 copy_operations.append((img_file, new_img_path, "image"))
 
@@ -254,7 +294,11 @@ def merge_dataset_parallel_internal(
                 label_file = label_mapping.get(base_name)
 
                 if label_file and label_file.exists():
-                    new_label_name = f"{image_prefix}_{file_index:05d}.txt"
+                    new_label_name = (
+                        label_file.name
+                        if image_prefix is None
+                        else f"{image_prefix}_{file_index:05d}.txt"
+                    )
                     new_label_path = labels_dir / new_label_name
                     copy_operations.append((label_file, new_label_path, "label"))
 
