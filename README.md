@@ -645,6 +645,14 @@ CI 构建的单文件可执行程序（`build-artifacts.yml`）：
 - 每个产物构建后都运行 `scripts/ci/smoke_test.sh`（Linux 在 `centos:7` 容器中），验证启动、Pillow 和 OpenCV 可用；
 - 不支持 musl 发行版（如 Alpine）。
 
+Linux 单文件程序运行时会把内置库解压到临时目录（amd64 约 230 MB，arm64 约 160 MB），正常退出或 Ctrl+C 后自动删除；被 `kill -9` 或断电时会残留 `_MEIxxxxxx` 目录，可手动删除。解压目录按以下顺序选择，跳过以 `noexec` 挂载的目录：
+
+1. 环境变量 `TMPDIR`、`TEMP`、`TMP`；
+2. `/tmp`、`/var/tmp`、`/usr/tmp`；
+3. `$HOME/.cache`。
+
+跳过 `noexec` 目录和最后回退到 `$HOME/.cache` 来自 PyInstaller 启动器补丁 `scripts/ci/pyinstaller-noexec-tmpdir.patch`（版本锁定在 `scripts/ci/build-requirements.txt`）。
+
 本地构建 Linux 产物：
 
 ```bash

@@ -1,0 +1,4 @@
+# 打包工具版本（CI 使用）。
+# Linux 构建会从该版本的源码包编译打过补丁的启动器（见 pyinstaller-noexec-tmpdir.patch），
+# 升级版本时需同步更新 build_linux.sh 中的 PYINSTALLER_SHA256，并确认补丁仍能应用。
+pyinstaller==6.22.3
