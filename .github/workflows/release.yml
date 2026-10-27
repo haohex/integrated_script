@@ -24,6 +24,11 @@ jobs:
       with:
         fetch-depth: 0
 
+    # actions/checkout 在 tag 触发时会把附注标签取成轻量标签，标签说明（release-overview）会丢失。
+    - name: Fetch annotated tag
+      shell: bash
+      run: git fetch --force origin "refs/tags/${{ github.ref_name }}:refs/tags/${{ github.ref_name }}"
+
     - name: Download build artifacts
       uses: actions/download-artifact@v4
       with:
@@ -233,6 +238,9 @@ jobs:
       with:
         files: |
           dist/windows-amd64/integrated_script-${{ github.ref_name }}-windows-amd64.exe
+          dist/linux-amd64/integrated_script-${{ github.ref_name }}-linux-amd64
+          dist/linux-arm64/integrated_script-${{ github.ref_name }}-linux-arm64
+        fail_on_unmatched_files: true
         body_path: release_body.md
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
