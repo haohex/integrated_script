@@ -94,11 +94,10 @@ def build_exe():
         "no",
     }
 
-    strip_enabled = os.name != "nt" and not is_arm64
-    if os.name != "nt" and is_arm64:
-        print("Notice: ARM64 build disables --strip.")
-    if strip_enabled:
-        print("Notice: --strip enabled.")
+    # --strip 会破坏 manylinux wheel 中经 auditwheel 处理的共享库
+    # （如 numpy 自带的 openblas，运行时报 "ELF load command address/offset
+    # not properly aligned"），因此不对 Linux 产物做 strip。
+    strip_enabled = False
 
     cmd_parts = [
         sys.executable,

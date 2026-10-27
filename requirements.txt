@@ -7,6 +7,5 @@ Pillow>=9.0.0         # Image processing
 opencv-python-headless>=4.5.0  # Computer vision (headless)
 PyYAML>=6.0           # YAML configuration support
 requests>=2.28.0      # HTTP requests for GitHub API
-uuid>=1.30            # Unique ID generation
 # Note: Optional dependencies (numpy, pandas, matplotlib) are defined in pyproject.toml
 # Install with: pip install -e .[optional] for optional dependencies

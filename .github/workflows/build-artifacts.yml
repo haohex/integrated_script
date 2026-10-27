@@ -14,121 +14,90 @@ jobs:
         include:
           - name: windows-amd64
             runner: windows-latest
-            setup_python: true
-            checkout_clean: true
-            python_cmd: python
             exe_name: integrated_script.exe
             out_name: integrated_script-${{ github.ref_name }}-windows-amd64.exe
-          # Linux 构建暂时屏蔽：构建镜像需先由 Build Image 工作流推送到当前仓库所有者的 GHCR，
-          # linux-arm64 还需自托管 runner 在线；恢复时取消以下注释。
-          # - name: linux-amd64
-          #   runner: ubuntu-latest
-          #   setup_python: false
-          #   checkout_clean: true
-          #   use_container: true
-          #   container_image: ghcr.io/${{ github.repository_owner }}/integrated_script-build:py39
-          #   container_python: /opt/venv/bin/python
-          #   container_platform: linux/amd64
-          #   docker_cmd: docker
-          #   install_deps: false
-          #   exe_name: integrated_script
-          #   out_name: integrated_script-${{ github.ref_name }}-linux-amd64
-          # - name: linux-arm64
-          #   runner:
-          #     - self-hosted
-          #     - Linux
-          #     - ARM64
-          #   setup_python: false
-          #   checkout_clean: false
-          #   use_container: true
-          #   container_image: ghcr.io/${{ github.repository_owner }}/integrated_script-build:py39
-          #   container_python: /opt/venv/bin/python
-          #   container_platform: linux/arm64
-          #   docker_cmd: sudo docker
-          #   install_deps: false
-          #   exe_name: integrated_script
-          #   out_name: integrated_script-${{ github.ref_name }}-linux-arm64
+          # Linux 在 manylinux2014 容器（glibc 2.17）中构建，产物可在 CentOS 7 / Ubuntu 18.04 及更新的发行版运行。
+          - name: linux-amd64
+            runner: ubuntu-latest
+            manylinux_image: quay.io/pypa/manylinux2014_x86_64
+            smoke_image: centos:7
+            exe_name: integrated_script
+            out_name: integrated_script-${{ github.ref_name }}-linux-amd64
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            manylinux_image: quay.io/pypa/manylinux2014_aarch64
+            smoke_image: centos:7
+            exe_name: integrated_script
+            out_name: integrated_script-${{ github.ref_name }}-linux-arm64
 
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        clean: ${{ matrix.checkout_clean }}
+
+    - name: Cache uv downloads
+      uses: actions/cache@v4
+      with:
+        path: .cache/uv
+        key: uv-${{ matrix.name }}-${{ hashFiles('requirements.txt') }}
+        restore-keys: uv-${{ matrix.name }}-
 
     - uses: actions/setup-python@v5
-      if: ${{ matrix.setup_python == true }}
+      if: ${{ runner.os == 'Windows' }}
       with:
         python-version: '3.11'
 
-    - name: Log in to GHCR
-      if: ${{ matrix.use_container == true }}
+    - uses: astral-sh/setup-uv@v6
+      if: ${{ runner.os == 'Windows' }}
+
+    - name: Build (Windows)
+      if: ${{ runner.os == 'Windows' }}
       shell: bash
       env:
-        GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        UV_CACHE_DIR: .cache/uv
       run: |
-        echo "$GHCR_TOKEN" | ${{ matrix.docker_cmd }} login ghcr.io -u "${{ github.actor }}" --password-stdin
+        uv venv --python "$(python -c 'import sys; print(sys.executable)')" .build-venv
+        uv pip install --python .build-venv --only-binary :all: -r requirements.txt pyinstaller
+        uv pip list --python .build-venv
+        .build-venv/Scripts/python build_exe.py
 
-    - name: Pull build image (if updated)
-      if: ${{ matrix.use_container == true }}
+    - name: Build (Linux, manylinux2014)
+      if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        ${{ matrix.docker_cmd }} pull --platform ${{ matrix.container_platform }} ${{ matrix.container_image }}
-
-    - name: Build (container)
-      if: ${{ matrix.use_container == true }}
-      shell: bash
-      run: |
-        mkdir -p cache/pip cache/pyuser
-        ${{ matrix.docker_cmd }} run --rm \
-          --platform ${{ matrix.container_platform }} \
-          -u "$(id -u):$(id -g)" \
-          -v "$PWD:/work" \
-          -v "$PWD/cache/pip:/work/.pip-cache" \
-          -v "$PWD/cache/pyuser:/work/.pyuser" \
-          -e HOME=/work \
-          -e PIP_CACHE_DIR=/work/.pip-cache \
-          -e PYTHONUSERBASE=/work/.pyuser \
-          -e PYINSTALLER_CLEAN=0 \
-          -w /work \
-          ${{ matrix.container_image }} \
-          bash -lc "
-            set -euo pipefail
-            PY_BIN=${{ matrix.container_python }}
-            export PATH=\"/work/.pyuser/bin:\$PATH\"
-            if [ \"${{ matrix.install_deps }}\" = \"true\" ]; then
-              \$PY_BIN -m pip install -U pip
-              \$PY_BIN -m pip install -r requirements.txt pyinstaller
-            fi
-            \$PY_BIN build_exe.py
-          "
-
-    - name: Build (hosted)
-      if: ${{ matrix.use_container != true }}
-      shell: bash
-      run: |
-        python -m pip install -U pip
-        python -m pip install -r requirements.txt pyinstaller
-        python build_exe.py
+        docker run --rm \
+          -v "$PWD:/work" -w /work \
+          -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+          ${{ matrix.manylinux_image }} \
+          bash scripts/ci/build_linux.sh
 
     - name: Rename executable with release tag
+      id: rename
+      shell: bash
       env:
-        EXE_NAME: ${{ matrix.exe_name }}
         OUT_NAME: ${{ matrix.out_name }}
+      run: |
+        # 分支上手动触发时 ref_name 可能含 "/"，替换掉以免变成子目录。
+        out="dist/${OUT_NAME//\//-}"
+        mv "dist/${{ matrix.exe_name }}" "$out"
+        echo "path=$out" >> "$GITHUB_OUTPUT"
+
+    - name: Smoke test (Windows)
+      if: ${{ runner.os == 'Windows' }}
+      shell: bash
+      run: bash scripts/ci/smoke_test.sh "${{ steps.rename.outputs.path }}"
+
+    - name: Smoke test (Linux, ${{ matrix.smoke_image }})
+      if: ${{ runner.os == 'Linux' }}
       shell: bash
       run: |
-        python - <<'PY'
-        import os
-        from pathlib import Path
-
-        exe_name = os.environ.get("EXE_NAME")
-        out_name = os.environ.get("OUT_NAME")
-        exe = Path("dist") / exe_name
-        if exe.exists() and out_name:
-            exe.rename(exe.with_name(out_name))
-        PY
+        docker run --rm -v "$PWD:/work" -w /work \
+          ${{ matrix.smoke_image }} \
+          bash scripts/ci/smoke_test.sh "${{ steps.rename.outputs.path }}"
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.name }}
-        path: dist/${{ matrix.out_name }}
+        path: ${{ steps.rename.outputs.path }}
+        if-no-files-found: error
