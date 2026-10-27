@@ -1,0 +1,62 @@
+flake8 --max-line-length=120 --extend-ignore=E203,W503 src/integrated_script tests/ scripts/ main.py build_exe.py
+python -m black --target-version py311 --check src tests scripts main.py build_exe.py
+All done! ✨ 🍰 ✨
+134 files would be left unchanged.
+python -m isort --check-only src tests scripts main.py build_exe.py
+Skipped 26 files
+mypy src/integrated_script
+Success: no issues found in 85 source files
+python -m pytest tests/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-9.1.1, pluggy-1.6.0
+PySide6 6.8.3 -- Qt runtime 6.8.3 -- Qt compiled 6.8.3
+rootdir: /home/luohao/code/integrated_script
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, cov-7.1.0, qt-4.5.0, platformdirs-4.12.1
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 427 items
+
+tests/cli/test_cli_smoke.py ..                                           [  0%]
+tests/integration/test_application_service.py ..................         [  4%]
+tests/integration/test_dataset_processor.py ....                         [  5%]
+tests/integration/test_file_processor.py ..............                  [  8%]
+tests/integration/test_label_processor.py ......                         [ 10%]
+tests/integration/test_yolo_processor.py ................                [ 14%]
+tests/ui/test_backend_requirement.py ...                                 [ 14%]
+tests/ui/test_desktop_widgets.py ........                                [ 16%]
+tests/ui/test_desktop_window.py .......                                  [ 18%]
+tests/ui/test_real_integration.py ....                                   [ 19%]
+tests/ui/test_shared.py ..........                                       [ 21%]
+tests/ui/test_theme_and_isolation_regression.py ........                 [ 23%]
+tests/ui/test_tui.py ....                                                [ 24%]
+tests/ui/test_tui_regression.py ...                                      [ 25%]
+tests/unit/test_application_file_handlers.py .........                   [ 27%]
+tests/unit/test_application_results.py ......                            [ 28%]
+tests/unit/test_base_processor.py ................                       [ 32%]
+tests/unit/test_code_quality_workflow.py .                               [ 32%]
+tests/unit/test_contracts_errors.py ..                                   [ 33%]
+tests/unit/test_contracts_results.py .....                               [ 34%]
+tests/unit/test_core_utils.py ......................                     [ 39%]
+tests/unit/test_exceptions.py .............                              [ 42%]
+tests/unit/test_file_workflow.py ........                                [ 44%]
+tests/unit/test_image_processor.py .....                                 [ 45%]
+tests/unit/test_image_workflow.py ......                                 [ 46%]
+tests/unit/test_interactive.py ......................................... [ 56%]
+.........                                                                [ 58%]
+tests/unit/test_label_workflow.py ......                                 [ 59%]
+tests/unit/test_main.py .......................                          [ 65%]
+tests/unit/test_menu.py .....                                            [ 66%]
+tests/unit/test_offline_packaging.py ................................... [ 74%]
+.............................                                            [ 81%]
+tests/unit/test_pre_push_quality_gate.py ..                              [ 81%]
+tests/unit/test_progress.py ...............                              [ 85%]
+tests/unit/test_release_docs.py sssssss                                  [ 87%]
+tests/unit/test_result_presenter.py ...                                  [ 87%]
+tests/unit/test_settings.py ........                                     [ 89%]
+tests/unit/test_yolo_helpers.py ......................                   [ 94%]
+tests/unit/test_yolo_workflow.py ......................                  [100%]
+
+=========================== short test summary info ============================
+SKIPPED [4] tests/unit/test_release_docs.py:12: release 文档不存在: /home/luohao/code/integrated_script/.claude/commands/release.md
+SKIPPED [3] tests/unit/test_release_docs.py:12: release 文档不存在: /home/luohao/code/integrated_script/.claude/skills/release/SKILL.md
+======================= 420 passed, 7 skipped in 18.68s ========================

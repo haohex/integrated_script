@@ -1,0 +1,19 @@
+[+   0.1s] fixtures ready: 1001 PNG under /data/图像 数据
+[+   5.9s] TUI ready (search box + operation list stable)
+[+  12.2s] selected operation title line: '▼ 功能目录             │ 图像压缩'
+[+  13.8s] input param filled: '/data/图像 数据' (visible on form)
+[+  13.8s] dispatching 执行 (Ctrl+R) ...
+[+  14.3s] output PNG count = 0/1001
+[+  29.6s] output PNG count = 87/1001
+[+  44.7s] output PNG count = 230/1001
+[+  59.8s] output PNG count = 352/1001
+[+  75.1s] output PNG count = 452/1001
+[+  90.4s] output PNG count = 572/1001
+[+ 105.5s] output PNG count = 714/1001
+[+ 120.8s] output PNG count = 848/1001
+[+ 133.8s] output PNG count reached 1001 (>= 1001)
+[+ 133.8s] compression stage done: output count = 1001/1001
+[+ 135.1s] status banner: 执行成功 (success)
+[+ 135.1s] first output verified: format=PNG size=(12, 9)
+[+ 136.2s] TUI quit exit code = 0
+[+ 136.2s] OFFLINE FROZEN COMPRESSION PASS: 1001 PNG, exit=0

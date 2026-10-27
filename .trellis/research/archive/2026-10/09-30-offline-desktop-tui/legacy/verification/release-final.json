@@ -1,0 +1,48 @@
+{
+  "completed_at": "2026-10-10",
+  "version": "3.0.1",
+  "status": "completed",
+  "development_commit": "01315aa542d7beb4b47baa18530b9bb96b91bcff",
+  "merge_commit": "72f8d43819c6341c93e1285a9050c54140fb7716",
+  "merge_tree_matches_development": true,
+  "pr": "https://github.com/haohex/integrated_script/pull/1",
+  "release": "https://github.com/haohex/integrated_script/releases/tag/v3.0.1",
+  "quality_run": "https://github.com/haohex/integrated_script/actions/runs/38014993838",
+  "development_build_run": "https://github.com/haohex/integrated_script/actions/runs/38014994017",
+  "release_run": "https://github.com/haohex/integrated_script/actions/runs/38015844945",
+  "requirements": {
+    "shared_gui_tui_operation_logic": "AppService catalog, validation, confirmations, events, results; preserved legacy CLI",
+    "native_paths": "Path/platformdirs Unicode, quoted/relative paths, native drives and UNC; no inferred foreign mount mapping",
+    "architecture_research": "Primary GitHub/official references documented in docs/architecture.md; separated application, processors and UI adapters",
+    "existing_behaviour": "Existing algorithms, defaults/output contracts retained; full regressions pass",
+    "presentation": "Antigravity GUI/TUI and native design; Windows actual frozen screenshot reviewed and long paths/log button fit",
+    "offline": "Five self-contained Python/dependency/resource bundles; actual network-isolated extracted-bundle operations and normal exits",
+    "delivery_sequence": "Local CI passed before dev push; exact dev head passed cloud/native/runtime/visual gates before merge; annotated v3.0.1 points to matching merge; gated auto Release verified by actual downloads"
+  },
+  "validation": {
+    "local": "make check-all exit0; 465passed7skipped, lint/black144/isort/mypy85 passed",
+    "windows_junit": "472 total,464 passed,8skipped,0failures/errors",
+    "windows_app_scales": [
+      100,
+      125,
+      150,
+      175,
+      200
+    ],
+    "release_runtime_reports": 7,
+    "tui_cases": "Three operations per Windows/Linux22 x64/Linux22 ARM64/Linux24 x64, each outputverified and exit0;1001 compression outputs",
+    "gui_cases": "Windows/Linux22/Linux24:2real empty labels/outputverified/screenshot/normalexit0/no console/stderr empty",
+    "download_audit": "12 actual assets;5 exact archives;4 unchanged downloaded SHA256 manifests;3 BUILDINFO version3.0.1 and merge SHA;bundled Python/_internal;Windows PE GUI2/TUI3"
+  },
+  "division": "Antigravity presentation; Pi shared backend and initial packaging; primary recovered CI/encoding/integration after confirmed Pi upstream400 failures",
+  "limitations": [
+    "macOS packages excluded by user",
+    "Windows native acceptance on Server2022; physical Win10/11 devices unverified",
+    "Windows binaries unsigned; Linux GUI requires documented system libraries"
+  ],
+  "evidence_cache": {
+    "downloads": "/tmp/integrated-release-v3.0.1-download",
+    "development": "/tmp/integrated-proof-01315aa",
+    "release": "/tmp/integrated-proof-release-v3.0.1"
+  }
+}

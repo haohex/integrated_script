@@ -1,0 +1,29 @@
+{
+  "id": "desktop-tui-ui",
+  "name": "desktop-tui-ui",
+  "title": "桌面 GUI 与 TUI 设计实现",
+  "description": "Antigravity 实现 Windows 优先视觉设计、跨平台双端与界面测试",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "luohao",
+  "assignee": "luohao",
+  "createdAt": "2026-09-30",
+  "completedAt": "2026-10-10",
+  "branch": "dev/offline-desktop-tui",
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": "72f8d43819c6341c93e1285a9050c54140fb7716",
+  "pr_url": "https://github.com/haohex/integrated_script/pull/1",
+  "subtasks": [],
+  "children": [],
+  "parent": "09-30-offline-desktop-tui",
+  "relatedFiles": [],
+  "notes": "2026-10-10：随PR1合并并发布v3.0.1；本地465passed7skipped，开发及发布云端全部门禁通过，12个正式下载资产和7份真实运行报告复核通过。macOS包不在本次范围；物理Win10/11设备及签名未验证。详见release-final.json。",
+  "meta": {
+    "acceptance_record": ".trellis/tasks/archive/2026-10/09-30-offline-desktop-tui/verification/release-final.json",
+    "release_url": "https://github.com/haohex/integrated_script/releases/tag/v3.0.1"
+  }
+}

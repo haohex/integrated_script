@@ -1,0 +1,7 @@
+[+   3.7s] TUI ready on ubuntu:24.04
+[+   9.9s] op1 title: '▼ 功能目录             │ 创建空标签文件'
+[+  12.3s] op1 empty-label create: PASS (labels/样本 A.txt empty)
+[+  18.6s] op2 title: '▼ 功能目录             │ 格式转换'
+[+  20.5s] op2 PNG->JPEG: PASS (JPEG 12x9)
+[+  21.2s] quit exit=0
+[+  21.2s] UBUNTU24 FROZEN TUI 2-OP PASS: empty label + PNG->JPEG; exit=0
