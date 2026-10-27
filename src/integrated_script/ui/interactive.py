@@ -1092,7 +1092,7 @@ class InteractiveInterface:
 
             while True:
                 prompt = f"数据集 {len(dataset_paths) + 1} 路径（回车结束输入）: "
-                path = input(prompt).strip()
+                path = self._strip_path_quotes(input(prompt))
 
                 if not path:
                     if len(dataset_paths) < 2:
@@ -1119,7 +1119,9 @@ class InteractiveInterface:
             print("\n=== 可选设置 ===")
 
             # 输出路径
-            output_path = input("输出路径（留空使用当前目录）: ").strip()
+            output_path = self._strip_path_quotes(
+                input("输出路径（留空使用当前目录）: ")
+            )
             if not output_path:
                 output_path = "."
             else:
@@ -1261,7 +1263,7 @@ class InteractiveInterface:
 
             while True:
                 prompt = f"数据集 {len(dataset_paths) + 1} 路径（回车结束输入）: "
-                path = input(prompt).strip()
+                path = self._strip_path_quotes(input(prompt))
 
                 if not path:
                     if len(dataset_paths) < 2:
@@ -1336,7 +1338,9 @@ class InteractiveInterface:
             print("\n=== 可选设置 ===")
 
             # 输出路径
-            output_path = input("输出路径（留空使用当前目录）: ").strip()
+            output_path = self._strip_path_quotes(
+                input("输出路径（留空使用当前目录）: ")
+            )
             if not output_path:
                 output_path = "."
             else:
@@ -3667,6 +3671,14 @@ image:
         self.menu_system.current_menu = self.menu_system.main_menu
 
     # 输入辅助方法
+    @staticmethod
+    def _strip_path_quotes(raw: str) -> str:
+        """去掉路径两端的空白和成对引号（如从资源管理器"复制为路径"粘贴的值）"""
+        path = raw.strip()
+        if len(path) >= 2 and path[0] == path[-1] and path[0] in "\"'":
+            path = path[1:-1].strip()
+        return path
+
     def _get_input(
         self,
         prompt: str,

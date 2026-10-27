@@ -1720,3 +1720,61 @@ def test_yolo_merge_different_datasets_uses_yes_no_helper_with_expected_defaults
 
     assert yes_no_calls[0] == ("是否需要调整数据集处理顺序？", False)
     assert yes_no_calls[-1] == ("\n确认开始合并？", False)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('"C:\\data\\set a"', "C:\\data\\set a"),
+        ("  'C:/data/set'  ", "C:/data/set"),
+        ("C:\\data\\set", "C:\\data\\set"),
+        ('"C:\\data\\set', '"C:\\data\\set'),
+        ('""', ""),
+        ("", ""),
+    ],
+)
+def test_strip_path_quotes(raw: str, expected: str) -> None:
+    from integrated_script.ui.interactive import InteractiveInterface
+
+    assert InteractiveInterface._strip_path_quotes(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "method_name", ["_yolo_merge_datasets", "_yolo_merge_different_datasets"]
+)
+def test_yolo_merge_accepts_quoted_dataset_paths(
+    interface_with_non_exe, monkeypatch, tmp_path, capsys, method_name: str
+) -> None:
+    d1 = tmp_path / "d 1"
+    d2 = tmp_path / "d2"
+    d1.mkdir()
+    d2.mkdir()
+
+    collected: List[List[str]] = []
+
+    class _StopAfterCollect(Exception):
+        pass
+
+    class _Workflow:
+        def __init__(self, _processor: Any) -> None:
+            pass
+
+        def validate_classes_consistency(self, dataset_paths: List[Path]) -> Any:
+            collected.append([str(p) for p in dataset_paths])
+            raise _StopAfterCollect()
+
+        def collect_all_classes_info(self, dataset_paths: List[Path]) -> Any:
+            collected.append([str(p) for p in dataset_paths])
+            raise _StopAfterCollect()
+
+    inputs = iter([f'"{d1}"', f"'{d2}'", "", "", "", ""])
+
+    monkeypatch.setattr("integrated_script.ui.interactive.YoloWorkflow", _Workflow)
+    monkeypatch.setattr(interface_with_non_exe, "_get_processor", lambda _n: None)
+    monkeypatch.setattr(interface_with_non_exe, "_pause", lambda: None)
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(inputs))
+
+    getattr(interface_with_non_exe, method_name)()
+
+    assert "路径不存在" not in capsys.readouterr().out
+    assert collected == [[str(d1), str(d2)]]
