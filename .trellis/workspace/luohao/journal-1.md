@@ -97,3 +97,34 @@ Topics: [.trellis/research/archive/2026-10/09-30-offline-desktop-tui/design.md](
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: 合并数据集：引号路径与文件名冲突前缀规则
+<!-- trellis-session: v=2 fp=be67f61ea27e2535 -->
+
+**Date**: 2026-10-27
+**Task**: 合并数据集：引号路径与文件名冲突前缀规则
+**Branch**: `fix/merge-dataset-input`
+
+### Summary
+
+在 .worktrees/merge-fixes 分支 fix/merge-dataset-input 完成两项（未合入 master）：选项8/9路径输入去成对引号；收集路径后先检查兼容性和文件名冲突（stem 不区分大小写），无冲突保留原名，有冲突强制前缀、留空取消，统一 前缀_00001。处理器 image_prefix=None 表示保留原名，无前缀且冲突时拒绝。README §6.1.7 已同步。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `475fcbe` | fix: 合并数据集时识别带引号的路径 |
+| `019d4dc` | feat: 合并数据集按文件名冲突决定是否强制图片前缀 |
+
+### Testing
+
+- [OK] flake8/black/isort/mypy 通过；pytest 301 passed 7 skipped；/tmp 端到端冒烟通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户确认后把 fix/merge-dataset-input 合入 master 并清理 worktree；bt 建议#2（交互流程多一轮图片扫描）按决定未做
