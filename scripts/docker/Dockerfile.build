@@ -1,13 +1,16 @@
 FROM registry.access.redhat.com/ubi8/python-39
 
 # Some UBI Python images don't ship microdnf; try common package managers, otherwise skip.
+# upx is optional (not in default UBI8 repos); build_exe.py skips compression without it.
 USER root
-RUN if command -v microdnf >/dev/null 2>&1; then \
-      microdnf install -y gcc gcc-c++ make mesa-libGL upx && microdnf clean all; \
-    elif command -v dnf >/dev/null 2>&1; then \
-      dnf install -y gcc gcc-c++ make mesa-libGL upx && dnf clean all; \
-    elif command -v yum >/dev/null 2>&1; then \
-      yum install -y gcc gcc-c++ make mesa-libGL upx && yum clean all; \
+RUN if command -v microdnf >/dev/null 2>&1; then PM=microdnf; \
+    elif command -v dnf >/dev/null 2>&1; then PM=dnf; \
+    elif command -v yum >/dev/null 2>&1; then PM=yum; \
+    else PM=; fi; \
+    if [ -n "$PM" ]; then \
+      $PM install -y gcc gcc-c++ make mesa-libGL \
+      && ($PM install -y upx || echo "upx not available, skipping.") \
+      && $PM clean all; \
     else \
       echo "No package manager found, skipping system deps install."; \
     fi
