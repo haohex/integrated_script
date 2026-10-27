@@ -632,6 +632,27 @@ python build_exe.py
 integrated-script --build
 ```
 
+CI 构建的单文件可执行程序（`build-artifacts.yml`）：
+
+| 产物 | 构建环境 | 运行要求 |
+|---|---|---|
+| `windows-amd64.exe` | `windows-latest` + Python 3.11 | Windows 10 及以上 x64 |
+| `linux-amd64` | `manylinux2014_x86_64` 容器 + uv 管理的 Python 3.11 | glibc 2.17+（CentOS 7、Ubuntu 18.04、Debian 10 及更新） |
+| `linux-arm64` | 原生 arm runner 上的 `manylinux2014_aarch64` 容器 | glibc 2.17+ 的 aarch64 发行版 |
+
+- 依赖只装预编译 wheel（`--only-binary :all:`），在旧 glibc 环境中自动选择兼容版本；
+- Linux 产物不使用 `--strip`（会破坏 numpy 等 wheel 自带的共享库）；
+- 每个产物构建后都运行 `scripts/ci/smoke_test.sh`（Linux 在 `centos:7` 容器中），验证启动、Pillow 和 OpenCV 可用；
+- 不支持 musl 发行版（如 Alpine）。
+
+本地构建 Linux 产物：
+
+```bash
+docker run --rm -v "$PWD:/work" -w /work -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  quay.io/pypa/manylinux2014_x86_64 bash scripts/ci/build_linux.sh
+docker run --rm -v "$PWD:/work" -w /work centos:7 bash scripts/ci/smoke_test.sh dist/integrated_script
+```
+
 ### 10.2 发布（推荐：tag 驱动自动发布）
 
 当前仓库以 GitHub Actions 的 `release.yml` 作为唯一发布入口：
