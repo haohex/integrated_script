@@ -19,13 +19,14 @@ jobs:
             python_cmd: python
             exe_name: integrated_script.exe
             out_name: integrated_script-${{ github.ref_name }}-windows-amd64.exe
-          # Linux 构建暂时屏蔽：ghcr.io/luohao830 构建镜像在 haohex 仓库下拉取被拒（denied），恢复时取消以下注释。
+          # Linux 构建暂时屏蔽：构建镜像需先由 Build Image 工作流推送到当前仓库所有者的 GHCR，
+          # linux-arm64 还需自托管 runner 在线；恢复时取消以下注释。
           # - name: linux-amd64
           #   runner: ubuntu-latest
           #   setup_python: false
           #   checkout_clean: true
           #   use_container: true
-          #   container_image: ghcr.io/luohao830/integrated_script-build:py39
+          #   container_image: ghcr.io/${{ github.repository_owner }}/integrated_script-build:py39
           #   container_python: /opt/venv/bin/python
           #   container_platform: linux/amd64
           #   docker_cmd: docker
@@ -40,7 +41,7 @@ jobs:
           #   setup_python: false
           #   checkout_clean: false
           #   use_container: true
-          #   container_image: ghcr.io/luohao830/integrated_script-build:py39
+          #   container_image: ghcr.io/${{ github.repository_owner }}/integrated_script-build:py39
           #   container_python: /opt/venv/bin/python
           #   container_platform: linux/arm64
           #   docker_cmd: sudo docker
@@ -58,6 +59,14 @@ jobs:
       if: ${{ matrix.setup_python == true }}
       with:
         python-version: '3.11'
+
+    - name: Log in to GHCR
+      if: ${{ matrix.use_container == true }}
+      shell: bash
+      env:
+        GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "$GHCR_TOKEN" | ${{ matrix.docker_cmd }} login ghcr.io -u "${{ github.actor }}" --password-stdin
 
     - name: Pull build image (if updated)
       if: ${{ matrix.use_container == true }}
