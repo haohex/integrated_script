@@ -1075,6 +1075,29 @@ class InteractiveInterface:
         if total_files > displayed_files:
             print(f"  ... 还有 {total_files - displayed_files} 个文件未显示")
 
+    def _get_merge_image_prefix(
+        self, workflow: YoloWorkflow, dataset_paths: List[Path]
+    ) -> Optional[str]:
+        """无冲突返回 None，取消返回空字符串，否则返回合法前缀。"""
+        conflicts = workflow.detect_name_conflicts(dataset_paths)
+        if conflicts.get("success") is False:
+            print(f"❌ 文件名冲突检测失败: {conflicts.get('error', '未知错误')}")
+            return ""
+        if not conflicts["has_conflict"]:
+            print("未发现文件名冲突，将保留原文件名")
+            return None
+        print(f"发现 {conflicts['conflict_count']} 个文件名冲突")
+        print(f"示例: {', '.join(conflicts['examples'])}")
+        while True:
+            prefix = input("图片前缀（必填，留空取消）: ").strip()
+            if not prefix:
+                print("操作已取消")
+                return ""
+            if any(char in prefix for char in '<>:"/\\|?*'):
+                print("⚠ 图片前缀包含 Windows 非法文件名字符，请重新输入")
+                continue
+            return prefix
+
     def _yolo_merge_datasets(self) -> None:
         """合并多个YOLO数据集"""
         try:
@@ -1082,7 +1105,7 @@ class InteractiveInterface:
             print("此功能将合并多个YOLO格式数据集，包括:")
             print("- 验证所有数据集的classes.txt一致性")
             print("- 自动生成输出目录名称")
-            print("- 统一图片前缀并格式化为5位数字")
+            print("- 无名称冲突时保留原名，有冲突时按前缀和5位数字重命名")
             print("- 合并所有图片和标签文件")
             print("- 提供详细的合并统计信息")
 
@@ -1092,7 +1115,7 @@ class InteractiveInterface:
 
             while True:
                 prompt = f"数据集 {len(dataset_paths) + 1} 路径（回车结束输入）: "
-                path = input(prompt).strip()
+                path = self._strip_path_quotes(input(prompt))
 
                 if not path:
                     if len(dataset_paths) < 2:
@@ -1115,11 +1138,35 @@ class InteractiveInterface:
 
             print(f"\n共收集到 {len(dataset_paths)} 个数据集")
 
+            processor = self._get_processor("yolo")
+            workflow = YoloWorkflow(processor)
+
+            # 先验证classes.txt一致性
+            print("\n正在验证数据集兼容性...")
+            path_objects = [Path(path) for path in dataset_paths]
+            validation_result = workflow.validate_classes_consistency(path_objects)
+
+            if not validation_result["consistent"]:
+                print(f"❌ 数据集验证失败: {validation_result['details']}")
+                print("\n请确保所有数据集具有相同的classes.txt文件内容")
+                self._pause()
+                return
+
+            print("✓ 数据集兼容性验证通过")
+            print(f"类别列表: {', '.join(validation_result['classes'])}")
+
+            image_prefix = self._get_merge_image_prefix(workflow, path_objects)
+            if image_prefix == "":
+                self._pause()
+                return
+
             # 获取可选参数
             print("\n=== 可选设置 ===")
 
             # 输出路径
-            output_path = input("输出路径（留空使用当前目录）: ").strip()
+            output_path = self._strip_path_quotes(
+                input("输出路径（留空使用当前目录）: ")
+            )
             if not output_path:
                 output_path = "."
             else:
@@ -1151,28 +1198,6 @@ class InteractiveInterface:
             if not output_dir:
                 output_dir = None
 
-            # 图片前缀
-            image_prefix: Optional[str] = input("图片前缀（留空使用默认）: ").strip()
-            if not image_prefix:
-                image_prefix = None
-
-            processor = self._get_processor("yolo")
-            workflow = YoloWorkflow(processor)
-
-            # 先验证classes.txt一致性
-            print("\n正在验证数据集兼容性...")
-            path_objects = [Path(path) for path in dataset_paths]
-            validation_result = workflow.validate_classes_consistency(path_objects)
-
-            if not validation_result["consistent"]:
-                print(f"❌ 数据集验证失败: {validation_result['details']}")
-                print("\n请确保所有数据集具有相同的classes.txt文件内容")
-                self._pause()
-                return
-
-            print("✓ 数据集兼容性验证通过")
-            print(f"类别列表: {', '.join(validation_result['classes'])}")
-
             # 生成输出目录名称预览
             if not output_dir:
                 suggested_name = workflow.generate_output_name(
@@ -1196,7 +1221,7 @@ class InteractiveInterface:
             if image_prefix:
                 print(f"图片前缀: {image_prefix}")
             else:
-                print("图片前缀: 自动生成")
+                print("图片前缀: 保留原文件名")
 
             confirm = self._get_yes_no_input("\n确认开始合并？", default=False)
             if not confirm:
@@ -1252,7 +1277,7 @@ class InteractiveInterface:
             print("- 生成统一的类别映射")
             print("- 支持用户自定义数据集处理顺序")
             print("- 自动重命名类别ID避免冲突")
-            print("- 统一图片前缀并格式化为5位数字")
+            print("- 无名称冲突时保留原名，有冲突时按前缀和5位数字重命名")
             print("- 提供详细的合并统计信息")
 
             # 收集数据集路径
@@ -1261,7 +1286,7 @@ class InteractiveInterface:
 
             while True:
                 prompt = f"数据集 {len(dataset_paths) + 1} 路径（回车结束输入）: "
-                path = input(prompt).strip()
+                path = self._strip_path_quotes(input(prompt))
 
                 if not path:
                     if len(dataset_paths) < 2:
@@ -1332,11 +1357,44 @@ class InteractiveInterface:
                     print("⚠ 输入格式错误，将使用默认顺序")
                     dataset_order = None
 
+            if dataset_order:
+                all_classes_info = [all_classes_info[i] for i in dataset_order]
+
+            # 预览统一类别映射
+            print("\n正在分析类别映射...")
+            unified_classes, class_mappings = workflow.create_unified_class_mapping(
+                all_classes_info
+            )
+
+            print("\n=== 统一类别映射预览 ===")
+            print(f"合并后总类别数: {len(unified_classes)}")
+            print(f"统一类别列表: {', '.join(unified_classes[:10])}")
+            if len(unified_classes) > 10:
+                print(f"... 等共 {len(unified_classes)} 个类别")
+
+            print("\n各数据集类别映射:")
+            for i, (info, mapping) in enumerate(zip(all_classes_info, class_mappings)):
+                print(f"数据集 {i+1} ({info['dataset_path'].name}):")
+                for old_id, new_id in mapping.items():
+                    old_class = info["classes"][old_id]
+                    new_class = unified_classes[new_id]
+                    if old_id != new_id:
+                        print(f"  {old_id}({old_class}) -> {new_id}({new_class})")
+                    else:
+                        print(f"  {old_id}({old_class}) -> 保持不变")
+
+            image_prefix = self._get_merge_image_prefix(workflow, path_objects)
+            if image_prefix == "":
+                self._pause()
+                return
+
             # 获取可选参数
             print("\n=== 可选设置 ===")
 
             # 输出路径
-            output_path = input("输出路径（留空使用当前目录）: ").strip()
+            output_path = self._strip_path_quotes(
+                input("输出路径（留空使用当前目录）: ")
+            )
             if not output_path:
                 output_path = "."
             else:
@@ -1368,34 +1426,6 @@ class InteractiveInterface:
             if not output_dir:
                 output_dir = None
 
-            # 图片前缀
-            image_prefix: Optional[str] = input("图片前缀（留空使用默认）: ").strip()
-            if not image_prefix:
-                image_prefix = None
-
-            # 预览统一类别映射
-            print("\n正在分析类别映射...")
-            unified_classes, class_mappings = workflow.create_unified_class_mapping(
-                all_classes_info
-            )
-
-            print("\n=== 统一类别映射预览 ===")
-            print(f"合并后总类别数: {len(unified_classes)}")
-            print(f"统一类别列表: {', '.join(unified_classes[:10])}")
-            if len(unified_classes) > 10:
-                print(f"... 等共 {len(unified_classes)} 个类别")
-
-            print("\n各数据集类别映射:")
-            for i, (info, mapping) in enumerate(zip(all_classes_info, class_mappings)):
-                print(f"数据集 {i+1} ({info['dataset_path'].name}):")
-                for old_id, new_id in mapping.items():
-                    old_class = info["classes"][old_id]
-                    new_class = unified_classes[new_id]
-                    if old_id != new_id:
-                        print(f"  {old_id}({old_class}) -> {new_id}({new_class})")
-                    else:
-                        print(f"  {old_id}({old_class}) -> 保持不变")
-
             # 生成输出目录名称预览
             if not output_dir:
                 suggested_name = workflow.generate_different_output_name(
@@ -1419,7 +1449,7 @@ class InteractiveInterface:
             if image_prefix:
                 print(f"图片前缀: {image_prefix}")
             else:
-                print("图片前缀: 使用默认(img)")
+                print("图片前缀: 保留原文件名")
 
             if dataset_order:
                 print("处理顺序: 自定义")
@@ -3667,6 +3697,14 @@ image:
         self.menu_system.current_menu = self.menu_system.main_menu
 
     # 输入辅助方法
+    @staticmethod
+    def _strip_path_quotes(raw: str) -> str:
+        """去掉路径两端的空白和成对引号（如从资源管理器"复制为路径"粘贴的值）"""
+        path = raw.strip()
+        if len(path) >= 2 and path[0] == path[-1] and path[0] in "\"'":
+            path = path[1:-1].strip()
+        return path
+
     def _get_input(
         self,
         prompt: str,
