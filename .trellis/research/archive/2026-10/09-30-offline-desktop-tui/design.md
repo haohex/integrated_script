@@ -1,5 +1,10 @@
 # Approved implementation design
 
+> **已回退（2026-10-27）**：本设计对应的实现经 PR #1 合并（`72f8d43`，即 v3.0.1），
+> 随后由 PR #2（`f8d6876` / 合并 `01be19a`）整体回退，master 代码恢复到 `dede867`。
+> 当前 master 中不存在 `application/`、`ui/desktop/`、`ui/tui/` 等本文描述的代码；本文仅作历史记录。
+> 如需重新引入，须先 revert `f8d6876`，直接重新合并 `dev/offline-desktop-tui` 不会生效。
+
 ## Layers and ownership
 `ui/desktop` and `ui/tui` -> `application` (operations, orchestration, runner) -> existing workflows/processors -> core path/progress/config adapters. No frontend imports of processors/business rules. Existing contracts.results.OperationResult preserved. Core never imports Qt/Textual. Legacy interactive UI remains regression fallback.
 

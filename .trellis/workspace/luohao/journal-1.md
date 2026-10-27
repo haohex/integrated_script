@@ -76,3 +76,24 @@ Antigravity 完成 GUI/TUI 与主题和隔离；Pi 完成共享运行时、路�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 标注 offline-desktop-tui 归档已回退
+<!-- trellis-session: v=2 fp=d571e5447ce43915 -->
+
+**Date**: 2026-10-27
+**Task**: 标注 offline-desktop-tui 归档已回退
+**Branch**: `master`
+
+### Summary
+
+PR #2 回退了共享 GUI/TUI 与跨平台离线发布架构，代码恢复到 dede867。在 offline-desktop-tui 主设计和 3 个子任务归档的 design.md 中加入已回退标注及重新引入的方法（先 revert f8d6876）。
+Topics: [.trellis/research/archive/2026-10/09-30-offline-desktop-tui/design.md](../../research/archive/2026-10/09-30-offline-desktop-tui/design.md)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**

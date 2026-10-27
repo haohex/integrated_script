@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
-- **Last Active**: 2026-10-10
+- **Total Sessions**: 3
+- **Last Active**: 2026-10-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~78 | Active |
+| `journal-1.md` | ~99 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-10-27 | 标注 offline-desktop-tui 归档已回退 | - | `master` |
 | 2 | 2026-10-10 | 离线桌面与 TUI 重构完成并发布 v3.0.1 | `01315aa542d7beb4b47baa18530b9bb96b91bcff`, `72f8d43819c6341c93e1285a9050c54140fb7716` | `dev/offline-desktop-tui` |
 | 1 | 2026-10-08 | 离线 GUI/TUI 架构实施与最终验收 | - | `master` |
 <!-- @@@/auto:session-history -->
