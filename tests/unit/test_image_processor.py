@@ -11,7 +11,6 @@ def _build_processor(tmp_path: Path, monkeypatch) -> ImageProcessor:
     monkeypatch.setattr(ImageProcessor, "_check_dependencies", lambda self: None)
 
     config = ConfigManager(config_file=tmp_path / "config.json", auto_save=False)
-    config.set("paths.temp_dir", str(tmp_path / "temp"))
     config.set("paths.log_dir", str(tmp_path / "logs"))
     return ImageProcessor(config=config)
 

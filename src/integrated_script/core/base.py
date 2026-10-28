@@ -75,7 +75,6 @@ class BaseProcessor(ABC):
     def _create_directories(self) -> None:
         """创建必要的目录"""
         dirs_to_create = [
-            self.config.get("paths.temp_dir", "temp"),
             self.config.get("paths.log_dir", "logs"),
         ]
 

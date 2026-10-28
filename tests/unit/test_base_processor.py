@@ -62,18 +62,32 @@ def _build_config(tmp_path: Path) -> ConfigManager:
         config_file=tmp_path / "config.json",
         auto_save=False,
     )
-    config.set("paths.temp_dir", str(tmp_path / "temp"))
     config.set("paths.log_dir", str(tmp_path / "logs"))
     return config
 
 
-def test_base_processor_initializes_and_creates_dirs(tmp_path: Path) -> None:
+def test_base_processor_initializes_without_creating_temp(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
     config = _build_config(tmp_path)
 
     processor = DummyProcessor(config=config)
 
     assert processor.initialize_called
-    assert (tmp_path / "temp").exists()
+    assert not (tmp_path / "temp").exists()
+    assert (tmp_path / "logs").exists()
+
+
+def test_base_processor_ignores_legacy_temp_dir(tmp_path: Path) -> None:
+    config = _build_config(tmp_path)
+    legacy_temp = tmp_path / "legacy-temp"
+    config.set("paths.temp_dir", str(legacy_temp))
+
+    processor = DummyProcessor(config=config)
+
+    assert processor.initialize_called
+    assert not legacy_temp.exists()
     assert (tmp_path / "logs").exists()
 
 

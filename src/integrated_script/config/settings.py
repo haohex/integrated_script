@@ -38,7 +38,6 @@ class ConfigManager:
         "paths": {
             "input_dir": "",
             "output_dir": "",
-            "temp_dir": "temp",
             "log_dir": "logs",
         },
         "processing": {
@@ -89,12 +88,12 @@ class ConfigManager:
         """初始化配置管理器
 
         Args:
-            config_file: 配置文件路径，默认为当前目录下的config.json
+            config_file: 配置文件路径，默认为当前目录下的config/config.json
             auto_save: 是否自动保存配置更改
             load_on_init: 初始化时是否立即加载配置
         """
         if config_file is None:
-            config_file = Path.cwd() / "config.json"
+            config_file = Path.cwd() / "config" / "config.json"
 
         self.config_file = Path(config_file)
         self.auto_save = auto_save
@@ -142,6 +141,11 @@ class ConfigManager:
                     "配置文件格式错误：根对象必须是字典",
                     config_file=str(file_path),
                 )
+
+            # 旧版本的临时目录配置已废弃，不参与后续验证和显示。
+            loaded_paths = loaded_config.get("paths")
+            if isinstance(loaded_paths, dict):
+                loaded_paths.pop("temp_dir", None)
 
             self.config_data = copy.deepcopy(self.DEFAULT_CONFIG)
             self._merge_config(loaded_config)

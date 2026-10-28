@@ -136,6 +136,172 @@ def interface_with_exe(monkeypatch, tmp_path) -> InteractiveInterface:
     return InteractiveInterface(config_manager=config)
 
 
+@pytest.mark.parametrize(
+    "method_name", ["_initialize_workspace", "_silent_initialize_workspace"]
+)
+def test_workspace_initialization_creates_no_temp(
+    interface_with_non_exe, monkeypatch, tmp_path: Path, method_name: str
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setattr(interface_with_non_exe, "_pause", lambda: None)
+
+    getattr(interface_with_non_exe, method_name)()
+
+    assert {path.name for path in work_dir.iterdir()} == {"config", "logs"}
+    assert (work_dir / "config" / "default_config.yaml").is_file()
+    assert interface_with_non_exe._check_workspace_info()
+
+
+def test_workspace_check_requires_logs_without_temp(
+    interface_with_non_exe, monkeypatch, tmp_path: Path
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+
+    assert not interface_with_non_exe._check_workspace_info()
+    (work_dir / "logs").mkdir()
+    assert interface_with_non_exe._check_workspace_info()
+    assert not (work_dir / "temp").exists()
+
+
+@pytest.mark.parametrize(
+    "method_name", ["_check_config_files", "_silent_check_config_files"]
+)
+def test_config_file_checks_use_new_path_and_keep_src_candidate(
+    interface_with_non_exe, monkeypatch, tmp_path: Path, capsys, method_name: str
+) -> None:
+    work_dir = tmp_path / "work"
+    (work_dir / "config").mkdir(parents=True)
+    (work_dir / "src").mkdir()
+    (work_dir / "config" / "config.json").write_text("{}", encoding="utf-8")
+    (work_dir / "config" / "default_config.yaml").write_text("{}", encoding="utf-8")
+    (work_dir / "src" / "config.json").write_text("{}", encoding="utf-8")
+    old_file = work_dir / "config.json"
+    old_file.write_text("not json", encoding="utf-8")
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setattr(interface_with_non_exe, "_pause", lambda: None)
+
+    getattr(interface_with_non_exe, method_name)()
+
+    output = capsys.readouterr().out
+    assert "✓ config/config.json 存在" in output
+    assert "✓ src/config.json 存在" in output
+    assert "✓ ConfigManager初始化成功" in output
+    assert "配置文件格式错误" not in output
+    assert "✓ config.json 存在" not in output
+    assert old_file.read_text(encoding="utf-8") == "not json"
+
+
+@pytest.mark.parametrize("new_config_exists", [False, True])
+def test_auto_environment_check_uses_new_config_path(
+    interface_with_non_exe, monkeypatch, tmp_path: Path, capsys, new_config_exists: bool
+) -> None:
+    work_dir = tmp_path / "work"
+    (work_dir / "config").mkdir(parents=True)
+    (work_dir / "logs").mkdir()
+    (work_dir / "config" / "default_config.yaml").write_text("{}", encoding="utf-8")
+    (work_dir / "config.json").write_text("{}", encoding="utf-8")
+    if new_config_exists:
+        (work_dir / "config" / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.chdir(work_dir)
+    calls: List[str] = []
+    monkeypatch.setattr(
+        interface_with_non_exe, "_check_system_environment", lambda: None
+    )
+    monkeypatch.setattr(
+        interface_with_non_exe, "_check_config_files", lambda: calls.append("config")
+    )
+    monkeypatch.setattr(
+        interface_with_non_exe,
+        "_initialize_workspace",
+        lambda: calls.append("workspace"),
+    )
+    monkeypatch.setattr(
+        interface_with_non_exe, "_comprehensive_environment_check", lambda: None
+    )
+    monkeypatch.setattr(interface_with_non_exe, "_pause", lambda: None)
+
+    interface_with_non_exe._auto_fix_all_environment()
+
+    assert calls == ([] if new_config_exists else ["config"])
+    assert (
+        "发现配置文件问题: config/config.json" in capsys.readouterr().out
+    ) is not new_config_exists
+    assert not (work_dir / "temp").exists()
+
+
+def test_path_settings_do_not_show_or_request_temp(
+    interface_with_non_exe, monkeypatch, capsys
+) -> None:
+    interface_with_non_exe.config_manager.set("paths.temp_dir", "legacy")
+    answers = iter(["input", "output", "logs-new"])
+    prompts: List[str] = []
+
+    def get_input(prompt: str) -> str:
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr(interface_with_non_exe, "_get_input", get_input)
+    monkeypatch.setattr(interface_with_non_exe, "_pause", lambda: None)
+
+    interface_with_non_exe._config_modify_paths()
+
+    assert len(prompts) == 3
+    assert all("临时目录" not in prompt for prompt in prompts)
+    assert "临时目录" not in capsys.readouterr().out
+    assert interface_with_non_exe.config_manager.get("paths.log_dir") == "logs-new"
+
+
+@pytest.mark.parametrize("use_default_config", [False, True])
+def test_normal_startup_creates_no_temp_or_root_config(
+    monkeypatch, tmp_path: Path, use_default_config: bool
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+    config = (
+        ConfigManager()
+        if use_default_config
+        else ConfigManager(config_file=tmp_path / "custom" / "settings.json")
+    )
+    monkeypatch.setattr(InteractiveInterface, "_is_running_as_exe", lambda self: False)
+    monkeypatch.setattr(
+        "integrated_script.ui.interactive.setup_logging", lambda **_kwargs: None
+    )
+    interface = InteractiveInterface(config_manager=config)
+    monkeypatch.setattr(interface.menu_system, "run", lambda: None)
+
+    interface.run()
+
+    # 源码方式启动不做环境检查，不初始化工作目录（只有 exe 启动时才静默检查）。
+    assert not (work_dir / "config" / "default_config.yaml").exists()
+    assert not (work_dir / "temp").exists()
+    assert not (work_dir / "config.json").exists()
+
+
+def test_exe_startup_creates_only_config_dir_and_logs(
+    monkeypatch, tmp_path: Path
+) -> None:
+    work_dir = tmp_path / "work"
+    work_dir.mkdir()
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setattr(InteractiveInterface, "_is_running_as_exe", lambda self: True)
+    monkeypatch.setattr(
+        "integrated_script.ui.interactive.setup_logging", lambda **_kwargs: None
+    )
+    interface = InteractiveInterface(config_manager=ConfigManager())
+    monkeypatch.setattr(interface.menu_system, "run", lambda: None)
+
+    interface.run()
+
+    assert {path.name for path in work_dir.iterdir()} == {"config", "logs"}
+    assert (work_dir / "config" / "config.json").is_file()
+    assert (work_dir / "config" / "default_config.yaml").is_file()
+
+
 def test_main_menu_includes_environment_entry_when_not_exe(
     interface_with_non_exe,
 ) -> None:
