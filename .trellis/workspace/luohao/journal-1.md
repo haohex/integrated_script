@@ -128,3 +128,32 @@ Topics: [.trellis/research/archive/2026-10/09-30-offline-desktop-tui/design.md](
 ### Next Steps
 
 - 用户确认后把 fix/merge-dataset-input 合入 master 并清理 worktree；bt 建议#2（交互流程多一轮图片扫描）按决定未做
+
+
+## Session 5: 配置文件移入 config/，删除 temp 目录与配置项
+<!-- trellis-session: v=2 fp=1a8d7366e6d851a2 -->
+
+**Date**: 2026-10-28
+**Task**: 配置文件移入 config/，删除 temp 目录与配置项
+**Branch**: `refactor/config-dir-no-temp`
+
+### Summary
+
+用户确认：默认配置改为 cwd/config/config.json，不读取、不迁移旧的 cwd/config.json（用户选择不兼容，放弃了自动迁移和只读旧文件两个备选）；temp 目录、paths.temp_dir 配置项和路径菜单项一并删除；仓库根目录示例 config.json 删除，config/config.json 加入 .gitignore。be 实现时为满足任务卡目标在源码启动路径新增了工作目录初始化，主会话撤回，保持源码启动不做环境检查。bt 评审无缺陷，按建议补了 exe 启动测试。
+Topics: [.trellis/spec/backend/runtime-files.md](../../spec/backend/runtime-files.md)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] flake8/black/isort/mypy 通过；pytest 317 passed 7 skipped；dispatch-check 越界 0
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 开 PR，合并后发 v3.0.7

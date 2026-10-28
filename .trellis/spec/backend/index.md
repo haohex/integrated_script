@@ -15,6 +15,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
+| [Runtime Files](./runtime-files.md) | Config file location (`config/config.json`), no `temp/`, files created at startup | Defined; verify with unit tests listed in the file |
 | [Shared Application Contract](./application-contract.md) | GUI/TUI operations, interactions, results, paths and offline boundaries | Defined; verify with application/UI integration tests |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |

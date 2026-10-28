@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-10-27
+- **Total Sessions**: 5
+- **Last Active**: 2026-10-28
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~130 | Active |
+| `journal-1.md` | ~159 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-10-28 | 配置文件移入 config/，删除 temp 目录与配置项 | - | `refactor/config-dir-no-temp` |
 | 4 | 2026-10-27 | 合并数据集：引号路径与文件名冲突前缀规则 | `475fcbe`, `019d4dc` | `fix/merge-dataset-input` |
 | 3 | 2026-10-27 | 标注 offline-desktop-tui 归档已回退 | - | `master` |
 | 2 | 2026-10-10 | 离线桌面与 TUI 重构完成并发布 v3.0.1 | `01315aa542d7beb4b47baa18530b9bb96b91bcff`, `72f8d43819c6341c93e1285a9050c54140fb7716` | `dev/offline-desktop-tui` |
