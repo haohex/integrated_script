@@ -6,7 +6,6 @@ from integrated_script.processors.dataset_processor import DatasetProcessor
 
 def _build_processor(tmp_path: Path) -> DatasetProcessor:
     config = ConfigManager(config_file=tmp_path / "config.json", auto_save=False)
-    config.set("paths.temp_dir", str(tmp_path / "temp"))
     config.set("paths.log_dir", str(tmp_path / "logs"))
     return DatasetProcessor(config=config)
 

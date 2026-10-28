@@ -15,7 +15,56 @@ def test_creates_default_config_file_when_missing(tmp_path: Path) -> None:
 
     assert config_file.exists()
     assert manager.get("version") == get_version()
-    assert manager.get("paths.temp_dir") == "temp"
+    assert "temp_dir" not in manager.get("paths")
+
+
+def test_default_config_path_is_in_config_directory(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    manager = ConfigManager(auto_save=False, load_on_init=False)
+
+    assert manager.config_file == tmp_path / "config" / "config.json"
+    assert manager.config_file.parent.is_dir()
+    assert not manager.config_file.exists()
+
+    manager.save()
+
+    assert manager.config_file.is_file()
+    assert not (tmp_path / "config.json").exists()
+
+
+@pytest.mark.parametrize("new_config_exists", [False, True])
+def test_default_config_ignores_old_root_file(
+    monkeypatch, tmp_path: Path, new_config_exists: bool
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    old_file = tmp_path / "config.json"
+    old_content = '{"ui": {"theme": "old"}}'
+    old_file.write_text(old_content, encoding="utf-8")
+    if new_config_exists:
+        new_file = tmp_path / "config" / "config.json"
+        new_file.parent.mkdir()
+        new_file.write_text('{"ui": {"theme": "new"}}', encoding="utf-8")
+
+    manager = ConfigManager(auto_save=False)
+
+    assert manager.get("ui.theme") == ("new" if new_config_exists else "default")
+    assert manager.config_file.is_file()
+    assert old_file.read_text(encoding="utf-8") == old_content
+
+
+def test_legacy_temp_dir_is_ignored_when_loading(tmp_path: Path) -> None:
+    config_file = tmp_path / "old.json"
+    old_content = '{"paths": {"temp_dir": {"invalid": true}}}'
+    config_file.write_text(old_content, encoding="utf-8")
+
+    manager = ConfigManager(config_file=config_file, auto_save=False)
+
+    assert "temp_dir" not in manager.get("paths")
+    assert manager.validate()
+    assert config_file.read_text(encoding="utf-8") == old_content
 
 
 def test_set_and_get_nested_value_without_auto_save(tmp_path: Path) -> None:
@@ -56,9 +105,9 @@ def test_get_all_does_not_mutate_internal_nested_config(tmp_path: Path) -> None:
     manager = ConfigManager(config_file=tmp_path / "config.json", auto_save=False)
 
     all_config = manager.get_all()
-    all_config["paths"]["temp_dir"] = "mutated-temp"
+    all_config["paths"]["log_dir"] = "mutated-logs"
 
-    assert manager.get("paths.temp_dir") == "temp"
+    assert manager.get("paths.log_dir") == "logs"
 
 
 def test_load_from_file_updates_in_memory_config(tmp_path: Path) -> None:

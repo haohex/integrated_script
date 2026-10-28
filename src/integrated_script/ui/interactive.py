@@ -2961,8 +2961,8 @@ class InteractiveInterface:
                 config_issues = []
 
                 # 检查主配置文件
-                if not os.path.exists("config.json"):
-                    config_issues.append("config.json")
+                if not os.path.exists("config/config.json"):
+                    config_issues.append("config/config.json")
 
                 # 检查默认配置文件
                 default_config_path = os.path.join("config", "default_config.yaml")
@@ -2981,7 +2981,7 @@ class InteractiveInterface:
             # 4. 初始化工作目录
             print("\n📁 步骤 4/5: 检查工作目录...")
             try:
-                required_dirs = ["logs", "temp", "config"]
+                required_dirs = ["logs", "config"]
                 missing_dirs = []
 
                 for dir_name in required_dirs:
@@ -3061,7 +3061,7 @@ class InteractiveInterface:
         """静默检查配置文件"""
         try:
             config_files = [
-                "config.json",
+                "config/config.json",
                 "config/default_config.yaml",
                 "src/config.json",
             ]
@@ -3107,7 +3107,7 @@ class InteractiveInterface:
         """静默初始化工作目录"""
         try:
             # 创建必要的目录
-            directories = ["logs", "temp", "config"]
+            directories = ["logs", "config"]
 
             for directory in directories:
                 dir_path = Path(directory)
@@ -3196,7 +3196,6 @@ image:
                 # paths 字段
                 "input_dir": "输入目录",
                 "output_dir": "输出目录",
-                "temp_dir": "临时目录",
                 "log_dir": "日志目录",
                 # processing 字段
                 "batch_size": "批处理大小",
@@ -3420,7 +3419,6 @@ image:
             print("\n当前路径配置:")
             print(f"  输入目录: {paths.get('input_dir', '')}")
             print(f"  输出目录: {paths.get('output_dir', '')}")
-            print(f"  临时目录: {paths.get('temp_dir', 'temp')}")
             print(f"  日志目录: {paths.get('log_dir', 'logs')}")
 
             print("\n请输入新的路径配置 (留空保持不变):")
@@ -3434,10 +3432,6 @@ image:
             output_dir = self._get_input(f"输出目录 [{paths.get('output_dir', '')}]: ")
             if output_dir:
                 updates["paths"]["output_dir"] = output_dir
-
-            temp_dir = self._get_input(f"临时目录 [{paths.get('temp_dir', 'temp')}]: ")
-            if temp_dir:
-                updates["paths"]["temp_dir"] = temp_dir
 
             log_dir = self._get_input(f"日志目录 [{paths.get('log_dir', 'logs')}]: ")
             if log_dir:
@@ -4074,7 +4068,11 @@ image:
         print("配置文件检查")
         print("=" * 50)
 
-        config_files = ["config.json", "config/default_config.yaml", "src/config.json"]
+        config_files = [
+            "config/config.json",
+            "config/default_config.yaml",
+            "src/config.json",
+        ]
 
         for config_file in config_files:
             config_path = Path(config_file)
@@ -4118,7 +4116,7 @@ image:
 
         try:
             # 创建必要的目录
-            directories = ["logs", "temp", "config"]
+            directories = ["logs", "config"]
 
             for directory in directories:
                 dir_path = Path(directory)
@@ -4281,7 +4279,7 @@ image:
     def _check_workspace_info(self) -> bool:
         """检查工作空间信息"""
         try:
-            required_dirs = ["logs", "temp"]
+            required_dirs = ["logs"]
             for directory in required_dirs:
                 if not Path(directory).exists():
                     return False

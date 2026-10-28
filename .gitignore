@@ -221,6 +221,7 @@ example_*
 demo_*
 
 # Configuration files with sensitive data
+config/config.json
 config/local_config.yaml
 config/production_config.yaml
 *.secret
